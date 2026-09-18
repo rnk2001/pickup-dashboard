@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบบริหารจัดการการรับสินค้า</title>
+  
+  <!-- Fonts: Plus Jakarta Sans + Prompt -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Flatpickr (Custom Clean DatePicker) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/th.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <!-- Database SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* Fintech & B2B (Stripe Palette Tokens) */
+    :root {
+      --bg-canvas: #f1f5f9;       /* Cool Slate Tint (60%) */
+      --bg-surface: #ffffff;      /* Surface Card (30%) */
+      --border-faint: #e2e8f0;
+      --border-light: #cbd5e1;
+      
+      --text-main: #0f172a;       /* Slate 900 (Tinted Dark Text) */
+      --text-muted: #475569;      /* Slate 600 */
+      --text-sub: #94a3b8;       /* Slate 400 */
+      
+      --brand-dark: #0f172a;      /* Stripe Deep Slate CTA (10%) */
+      --brand-primary: #0284c7;   /* Accent Cyan/Blue */
+      
+      --emerald-main: #0d9488;    /* Muted Teal 600 */
+      --emerald-sub: #0f766e;
+      --emerald-bg: #ccfbf1;
+      
+      --purple-main: #6366f1;     /* Soft Indigo 500 */
+      --purple-sub: #4338ca;
+      --purple-bg: #e0e7ff;
+      
+      --radius-xl: 14px;
+      --radius-lg: 10px;
+      --radius-md: 8px;
+      --radius-pill: 9999px;
+      
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+      --shadow-soft: 0 4px 12px rgba(15, 23, 42, 0.03);
+      --shadow-hover: 0 8px 20px rgba(15, 23, 42, 0.06);
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Dark Mode (Fintech Midnight Slate) */
+    body.dark-theme {
+      --bg-canvas: #0f172a;
+      --bg-surface: #1e293b;
+      --border-faint: #334155;
+      --border-light: #475569;
+      
+      --text-main: #f8fafc;
+      --text-muted: #cbd5e1;
+      --text-sub: #64748b;
+      
+      --brand-dark: #38bdf8;
+      --brand-primary: #0284c7;
+      
+      --emerald-main: #2dd4bf;
+      --emerald-sub: #14b8a6;
+      --emerald-bg: rgba(13, 148, 136, 0.18);
+      
+      --purple-main: #818cf8;
+      --purple-sub: #6366f1;
+      --purple-bg: rgba(99, 102, 241, 0.18);
+      
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+      --shadow-soft: 0 4px 14px rgba(0, 0, 0, 0.25);
+      --shadow-hover: 0 8px 22px rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    html { overflow-y: scroll; }
+
+    body { 
+      font-family: 'Plus Jakarta Sans', 'Prompt', sans-serif; 
+      background-color: var(--bg-canvas); 
+      color: var(--text-main); 
+      display: flex; 
+      min-height: 100vh; 
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    .lucide { width: 17px; height: 17px; stroke-width: 2px; vertical-align: middle; }
+
+    /* Skeleton Loading */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, var(--border-faint) 25%, var(--border-light) 50%, var(--border-faint) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 4px;
+      display: inline-block;
+    }
+    .skeleton-text { height: 16px; width: 70px; }
+
+    /* Clean Sidebar */
+    .sidebar {
+      width: 240px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-faint);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 16px;
+      position: fixed;
+      height: 100vh;
+      z-index: 99;
+      transition: var(--transition);
+    }
+    
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 8px 24px 8px;
+    }
+    .brand-badge {
+      width: 38px;
+      height: 38px;
+      background: var(--brand-dark);
+      color: #ffffff;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-sm);
+    }
+    body.dark-theme .brand-badge { color: #0f172a; }
+    .brand-title { font-weight: 700; font-size: 1.05rem; color: var(--text-main); letter-spacing: -0.02em; }
+
+    .nav-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 12px 10px 6px 10px;
+    }
+
+    .menu-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-radius: var(--radius-pill);
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.86rem;
+      transition: var(--transition);
+      cursor: pointer;
+    }
+    .menu-item-left { display: flex; align-items: center; gap: 10px; }
+    .menu-item:hover { color: var(--text-main); background: var(--bg-canvas); }
+    .menu-item.active { background: var(--brand-dark); color: #ffffff; font-weight: 600; box-shadow: var(--shadow-soft); }
+    body.dark-theme .menu-item.active { color: #0f172a; }
+
+    /* Main Container */
+    .main-wrapper {
+      margin-left: 240px;
+      flex: 1;
+      padding: 28px 36px;
+      max-width: 1550px;
+    }
+
+    /* Top Control Header */
+    .control-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .header-heading h1 { font-size: 1.35rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.01em; }
+    
+    .segmented-tabs {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-faint);
+      padding: 4px;
+      border-radius: var(--radius-pill);
+      display: flex;
+      gap: 4px;
+      box-shadow: var(--shadow-sm);
+    }
+    .segmented-tab {
+      padding: 6px 16px;
+      border-radius: var(--radius-pill);
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .segmented-tab.active { background: var(--brand-dark); color: #ffffff; font-weight: 600; }
+    body.dark-theme .segmented-tab.active { color: #0f172a; }
+
+    .control-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    
+    .search-box {
+      position: relative;
+      width: 200px;
+    }
+    .search-box input {
+      width: 100%;
+      padding: 8px 12px 8px 34px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-light);
+      background: var(--bg-surface);
+      font-size: 0.82rem;
+      outline: none;
+      font-family: inherit;
+      color: var(--text-main);
+      transition: var(--transition);
+    }
+    .search-box input:focus { border-color: var(--brand-dark); box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.05); }
+    .search-box .lucide { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+
+    /* Custom Clean Date Input Box with Flatpickr */
+    .date-input-wrapper {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .date-input-wrapper input {
+      padding: 8px 12px 8px 32px;
+      border-radius: var(--radius-pill);
+      font-size: 0.82rem;
+      font-weight: 500;
+      border: 1px solid var(--border-light);
+      background: var(--bg-surface);
+      color: var(--text-main);
+      outline: none;
+      cursor: pointer;
+      font-family: inherit;
+      width: 125px;
+      box-shadow: var(--shadow-sm);
+      transition: var(--transition);
+    }
+    .date-input-wrapper input:hover, .date-input-wrapper input:focus { border-color: var(--brand-dark); box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.05); }
+    .date-input-wrapper .lucide {
+      position: absolute;
+      left: 10px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    /* Soft Thin Border Buttons */
+    .btn-clean {
+      padding: 8px 16px;
+      border-radius: var(--radius-pill);
+      font-size: 0.82rem;
+      font-weight: 500;
+      border: 1px solid var(--border-light);
+      background: var(--bg-surface);
+      color: var(--text-main);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition);
+      font-family: inherit;
+      white-space: nowrap;
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-clean:hover { background: var(--bg-canvas); border-color: var(--text-muted); transform: translateY(-1px); }
+    
+    .btn-primary {
+      background: var(--brand-dark);
+      color: #ffffff;
+      border-color: var(--brand-dark);
+      font-weight: 600;
+    }
+    body.dark-theme .btn-primary { color: #0f172a; }
+    .btn-primary:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: var(--shadow-soft); }
+
+    /* Theme Toggle Button */
+    .btn-theme-toggle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-main);
+    }
+
+    /* Clean White Cards with Soft Elevation */
+    .clean-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-faint);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-soft);
+      transition: var(--transition);
+    }
+    .clean-card:hover { border-color: var(--border-light); box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+
+    /* KPI Grid */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    
+    .kpi-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-faint);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow-soft);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 120px;
+      transition: var(--transition);
+    }
+    .kpi-box:hover { border-color: var(--border-light); transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+
+    .kpi-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .kpi-title { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
+    
+    .kpi-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--bg-canvas);
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-faint);
+    }
+
+    .kpi-body .val { font-size: 1.7rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.02em; line-height: 1.1; }
+    .kpi-body .sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; font-weight: 500; }
+
+    /* Content Layout */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1.8fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 1100px) { .content-grid { grid-template-columns: 1fr; } }
+
+    .card-heading-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .card-heading { font-size: 0.95rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+
+    /* Action List */
+    .action-stack { display: flex; flex-direction: column; gap: 10px; }
+    .action-box {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-faint);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      transition: var(--transition);
+    }
+    .action-box:hover { background: var(--bg-surface); border-color: var(--border-light); transform: translateX(2px); }
+    .action-left { display: flex; align-items: center; gap: 12px; }
+    .action-icon-box {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-faint);
+      color: var(--emerald-main);
+    }
+    .action-details .title { font-size: 0.85rem; font-weight: 600; color: var(--text-main); }
+    .action-details .desc { font-size: 0.76rem; color: var(--text-muted); }
+
+    /* Pastel Badges */
+    .badge-pastel {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 0.74rem;
+      font-weight: 600;
+    }
+    .badge-pastel.emerald { background: var(--emerald-bg); color: var(--emerald-main); }
+    .badge-pastel.purple { background: var(--purple-bg); color: var(--purple-main); }
+
+    /* Clean Data Table */
+    .clean-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 0.83rem;
+    }
+    .clean-table th {
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-faint);
+      background: var(--bg-canvas);
+    }
+    .clean-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-faint);
+      color: var(--text-main);
+    }
+    .clean-table tfoot td {
+      padding: 14px 16px;
+      background: var(--bg-canvas);
+      border-top: 2px solid var(--border-light);
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .clean-table tbody tr:hover { background: var(--bg-canvas); }
+
+    /* Form Page Styling */
+    .form-card-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-faint);
+      border-radius: var(--radius-xl);
+      padding: 32px;
+      box-shadow: var(--shadow-soft);
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .form-section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border-faint);
+    }
+    .form-section-header h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 640px) { .form-grid-2 { grid-template-columns: 1fr; } }
+
+    .form-group-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .input-clean-field {
+      width: 100%;
+      padding: 10px 16px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-light);
+      background: var(--bg-surface);
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: var(--text-main);
+      outline: none;
+      transition: var(--transition);
+      box-shadow: var(--shadow-sm);
+    }
+    .input-clean-field:focus {
+      border-color: var(--brand-dark);
+      box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.05);
+    }
+
+    /* Item Dynamic Grid */
+    .form-item-grid {
+      background: var(--bg-canvas);
+      padding: 16px 20px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-faint);
+      margin-bottom: 12px;
+      display: grid;
+      grid-template-columns: 1.5fr 1fr 1.2fr 2fr auto;
+      gap: 12px;
+      align-items: center;
+      transition: var(--transition);
+    }
+    .form-item-grid:hover { border-color: var(--border-light); }
+
+    .btn-delete-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid #fee2e2;
+      background: #fff5f5;
+      color: #ef4444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    body.dark-theme .btn-delete-icon {
+      border-color: rgba(239, 68, 68, 0.3);
+      background: rgba(239, 68, 68, 0.12);
+    }
+    .btn-delete-icon:hover {
+      background: #ef4444;
+      color: #ffffff;
+      border-color: #ef4444;
+    }
+
+    /* Live Form Calculation Banner */
+    .form-live-summary {
+      background: var(--emerald-bg);
+      border: 1px solid rgba(13, 148, 136, 0.2);
+      border-radius: var(--radius-lg);
+      padding: 14px 20px;
+      margin-top: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.86rem;
+      color: var(--emerald-main);
+      font-weight: 600;
+    }
+
+    /* Empty State Box */
+    .empty-state-box {
+      text-align: center;
+      padding: 36px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--bg-canvas);
+      color: var(--text-sub);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    /* Flatpickr Customization */
+    .flatpickr-calendar {
+      border-radius: var(--radius-lg) !important;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
+      border: 1px solid var(--border-light) !important;
+      background: var(--bg-surface) !important;
+      font-family: 'Prompt', sans-serif !important;
+    }
+    .flatpickr-day {
+      color: var(--text-main) !important;
+    }
+    .flatpickr-day.selected {
+      background: var(--brand-dark) !important;
+      border-color: var(--brand-dark) !important;
+      color: #ffffff !important;
+    }
+    body.dark-theme .flatpickr-day.selected {
+      color: #0f172a !important;
+    }
+
+    /* Section Control */
+    .page-section { display: none; }
+    .page-section.active { display: block; }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(3px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 999;
+    }
+    .modal-container {
+      background: var(--bg-surface);
+      width: 90%;
+      max-width: 900px;
+      border-radius: var(--radius-xl);
+      padding: 28px;
+      max-height: 88vh;
+      overflow-y: auto;
+      border: 1px solid var(--border-faint);
+      box-shadow: var(--shadow-hover);
+    }
+
+    /* Mobile FAB */
+    .fab-btn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--brand-dark);
+      color: #ffffff;
+      border: none;
+      box-shadow: var(--shadow-hover);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 990;
+    }
+    body.dark-theme .fab-btn { color: #0f172a; }
+
+    /* Style for Printing */
+    @media print {
+      .sidebar, .control-header, .fab-btn, .action-stack, .segmented-tabs { display: none !important; }
+      .main-wrapper { margin-left: 0 !important; padding: 0 !important; }
+      .clean-card { box-shadow: none !important; border: none !important; }
+    }
+
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); }
+      .main-wrapper { margin-left: 0; padding: 16px; }
+      .form-item-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Clean Sidebar -->
+  <aside class="sidebar">
+    <div>
+      <div class="brand-header">
+        <div class="brand-badge"><i data-lucide="layers"></i></div>
+        <span class="brand-title">Pickup Manager</span>
+      </div>
+
+      <div class="nav-label">เมนูหลัก</div>
+      <ul class="menu-list">
+        <li>
+          <a class="menu-item active" onclick="switchPage(event, 'dashboard', this)">
+            <div class="menu-item-left">
+              <i data-lucide="layout-dashboard"></i>
+              <span>แผงควบคุม</span>
+            </div>
+          </a>
+        </li>
+        <li>
+          <a class="menu-item" onclick="switchPage(event, 'form', this)">
+            <div class="menu-item-left">
+              <i data-lucide="plus-circle"></i>
+              <span>บันทึกสินค้า</span>
+            </div>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Main Content Wrapper -->
+  <main class="main-wrapper">
+
+    <!-- Top Control Header -->
+    <header class="control-header">
+      <div class="header-heading">
+        <h1>ระบบบริหารจัดการการรับสินค้า</h1>
+      </div>
+
+      <div class="segmented-tabs">
+        <button class="segmented-tab active" onclick="switchPage(event, 'dashboard', document.querySelectorAll('.menu-item')[0])">ภาพรวมระบบ</button>
+        <button class="segmented-tab" onclick="switchPage(event, 'form', document.querySelectorAll('.menu-item')[1])">บันทึกรายการ</button>
+      </div>
+
+      <div class="control-actions">
+        <div class="search-box">
+          <i data-lucide="search"></i>
+          <input type="text" id="topGlobalSearch" placeholder="ค้นหาตาราง..." onkeyup="liveSearchDailyTable()">
+        </div>
+        
+        <!-- Clean Custom Date Picker -->
+        <div class="date-input-wrapper">
+          <i data-lucide="calendar"></i>
+          <input type="text" id="filterStartDate" placeholder="เริ่มวันที่">
+        </div>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">ถึง</span>
+        <div class="date-input-wrapper">
+          <i data-lucide="calendar"></i>
+          <input type="text" id="filterEndDate" placeholder="ถึงวันที่">
+        </div>
+        
+        <select id="filterItemType" class="btn-clean" style="padding: 8px 12px;">
+          <option value="ทั้งหมด">ประเภทสินค้าทั้งหมด</option>
+          <option value="ทั่วไป">ทั่วไป</option>
+          <option value="แม่ชี">แม่ชี</option>
+        </select>
+
+        <button class="btn-primary btn-clean" onclick="applyFilter()"><i data-lucide="filter"></i> กรอง</button>
+        
+        <!-- Light / Dark Mode Toggle Button -->
+        <button class="btn-clean btn-theme-toggle" onclick="toggleTheme()" title="สลับโหมดสว่าง / มืด">
+          <i data-lucide="moon" id="themeIcon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Page 1: Dashboard Section -->
+    <section id="page-dashboard" class="page-section active">
+
+      <!-- KPI Stat Cards -->
+      <div class="kpi-row">
+        <div class="kpi-box">
+          <div class="kpi-head">
+            <span class="kpi-title">ยอดรับรวมทั้งหมด</span>
+            <div class="kpi-icon"><i data-lucide="package"></i></div>
+          </div>
+          <div class="kpi-body">
+            <div class="val" id="dashTotalQty"><span class="skeleton skeleton-text"></span></div>
+            <div class="sub" id="dashTotalPrice"><span class="skeleton skeleton-text" style="width:50px;"></span></div>
+          </div>
+        </div>
+
+        <div class="kpi-box">
+          <div class="kpi-head">
+            <span class="kpi-title">ประเภท: ทั่วไป</span>
+            <div class="kpi-icon"><i data-lucide="box"></i></div>
+          </div>
+          <div class="kpi-body">
+            <div class="val" id="dashGeneralQty"><span class="skeleton skeleton-text"></span></div>
+            <div class="sub" id="dashGeneralPrice"><span class="skeleton skeleton-text" style="width:50px;"></span></div>
+          </div>
+        </div>
+
+        <div class="kpi-box">
+          <div class="kpi-head">
+            <span class="kpi-title">ประเภท: แม่ชี</span>
+            <div class="kpi-icon"><i data-lucide="users"></i></div>
+          </div>
+          <div class="kpi-body">
+            <div class="val" id="dashNunQty"><span class="skeleton skeleton-text"></span></div>
+            <div class="sub" id="dashNunPrice"><span class="skeleton skeleton-text" style="width:50px;"></span></div>
+          </div>
+        </div>
+
+        <div class="kpi-box">
+          <div class="kpi-head">
+            <span class="kpi-title">สัดส่วนการรับเข้า</span>
+            <div class="kpi-icon"><i data-lucide="pie-chart"></i></div>
+          </div>
+          <div class="kpi-body">
+            <div class="val" id="dashRatioPercent">100%</div>
+            <div class="sub">ทั่วไป vs แม่ชี</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Middle Section -->
+      <div class="content-grid">
+        
+        <!-- Left Box: Actions -->
+        <div class="clean-card">
+          <div class="card-heading-row">
+            <div class="card-heading"><i data-lucide="zap"></i> เมนูดำเนินการด่วน</div>
+          </div>
+
+          <div class="action-stack">
+            <div class="action-box">
+              <div class="action-left">
+                <div class="action-icon-box"><i data-lucide="plus-circle"></i></div>
+                <div class="action-details">
+                  <div class="title">บันทึกรับสินค้าใหม่เข้าสู่ระบบ</div>
+                  <div class="desc">กรอกรายละเอียดจำนวนและมูลค่าสินค้า</div>
+                </div>
+              </div>
+              <button class="btn-clean" onclick="switchPage(null, 'form', document.querySelectorAll('.menu-item')[1])">บันทึกเพิ่ม</button>
+            </div>
+
+            <div class="action-box">
+              <div class="action-left">
+                <div class="action-icon-box"><i data-lucide="download"></i></div>
+                <div class="action-details">
+                  <div class="title">ส่งออกข้อมูลเป็นไฟล์ CSV</div>
+                  <div class="desc">นำข้อมูลไปใช้งานต่อในระบบบัญชีหรือ Excel</div>
+                </div>
+              </div>
+              <button class="btn-clean" onclick="exportToCSV()">ดาวน์โหลด</button>
+            </div>
+
+            <div class="action-box">
+              <div class="action-left">
+                <div class="action-icon-box"><i data-lucide="file-text"></i></div>
+                <div class="action-details">
+                  <div class="title">พิมพ์รายงานสรุป PDF</div>
+                  <div class="desc">พิมพ์เอกสารสรุปยอดรวมอย่างเป็นทางการ</div>
+                </div>
+              </div>
+              <button class="btn-primary btn-clean" onclick="exportToPDF()">พิมพ์ PDF</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Box: 3D Wave Gradient Chart -->
+        <div class="clean-card">
+          <div class="card-heading-row">
+            <div class="card-heading"><i data-lucide="trending-up"></i> แนวโน้มการรับสินค้า (Fintech Analytics)</div>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn-clean" style="padding: 4px 10px; font-size: 0.72rem;" onclick="setQuickDate('7days')">7 วัน</button>
+              <button class="btn-clean" style="padding: 4px 10px; font-size: 0.72rem;" onclick="setQuickDate('thisMonth')">เดือนนี้</button>
+            </div>
+          </div>
+          <div style="height: 200px; position: relative;">
+            <canvas id="proportionWaveChart"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Table Widget -->
+      <div class="clean-card">
+        <div class="card-heading-row">
+          <div class="card-heading"><i data-lucide="calendar-days"></i> ตารางสรุปรายวัน (เรียงตามลำดับวันที่ 1-31)</div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="clean-table">
+            <thead>
+              <tr>
+                <th>วันที่</th>
+                <th>จำนวนรวม (ชิ้น)</th>
+                <th>มูลค่ารวม (บาท)</th>
+                <th>สัดส่วนประเภท</th>
+                <th style="text-align: center;">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="dailyTableBody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                  กำลังประมวลผลข้อมูล...
+                </td>
+              </tr>
+            </tbody>
+            <tfoot id="dailyTableFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Page 2: Record Form Section -->
+    <section id="page-form" class="page-section">
+      <div class="form-card-container">
+        <div class="form-section-header">
+          <div class="brand-badge"><i data-lucide="pen-tool"></i></div>
+          <h2>บันทึกรายการสินค้าเข้าสู่ระบบ</h2>
+        </div>
+
+        <form id="pickupForm">
+          <div class="form-grid-2">
+            <div>
+              <label class="form-group-label">วันที่บันทึก</label>
+              <div class="date-input-wrapper" style="width: 100%;">
+                <i data-lucide="calendar"></i>
+                <input type="text" id="recordDate" class="input-clean-field" style="width: 100%; text-align: left;" required placeholder="เลือกวันที่">
+              </div>
+            </div>
+            <div>
+              <label class="form-group-label">ผู้บันทึกข้อมูล</label>
+              <input type="text" id="recorder" class="input-clean-field" placeholder="ระบุชื่อผู้รับผิดชอบ" required>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 0.9rem; font-weight: 700; color: var(--text-main);">รายการสินค้า</span>
+            <button type="button" class="btn-clean" onclick="addItemRow()"><i data-lucide="plus"></i> เพิ่มแถวรายการ</button>
+          </div>
+
+          <div id="itemsContainer"></div>
+
+          <!-- Live Form Summary Banner -->
+          <div class="form-live-summary">
+            <span><i data-lucide="calculator"></i> คำนวณยอดรวมสด:</span>
+            <span>จำนวน <strong id="liveTotalQty" style="color: var(--text-main);">0</strong> ชิ้น | มูลค่ารวม <strong id="liveTotalPrice" style="color: var(--emerald-main);">0.00</strong> บาท</span>
+          </div>
+
+          <div style="margin-top: 24px; text-align: right;">
+            <button type="submit" id="submitBtn" class="btn-primary btn-clean" style="padding: 10px 32px; font-size: 0.88rem;"><i data-lucide="save"></i> ยืนยันบันทึกข้อมูล</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Mobile FAB -->
+  <button class="fab-btn" onclick="openQuickFormFAB()">
+    <i data-lucide="plus"></i>
+  </button>
+
+  <!-- Detail Modal -->
+  <div id="detailModal" class="modal-backdrop">
+    <div class="modal-container">
+      <div class="card-heading-row" style="margin-bottom: 16px;">
+        <div class="card-heading">รายละเอียดรายการวันที่: <span id="detailModalDate" style="color: var(--emerald-main);"></span></div>
+        <button class="btn-clean" onclick="closeDetailModal()"><i data-lucide="x"></i> ปิด</button>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <input type="text" id="detailTableSearch" class="btn-clean" placeholder="ค้นหารายการ..." style="width: 100%; text-align: left;" onkeyup="liveSearchDetailModal()">
+      </div>
+
+      <div style="font-size: 0.85rem; font-weight: 700; color: var(--emerald-main); margin: 12px 0 8px 0; display:flex; align-items:center; gap:6px;">
+        <span class="badge-pastel emerald"><i data-lucide="box"></i> สินค้าทั่วไป</span> (<span id="countGeneral">0</span> รายการ)
+      </div>
+      <div style="overflow-x: auto; margin-bottom: 20px;">
+        <table class="clean-table">
+          <thead>
+            <tr>
+              <th>รหัสอ้างอิง</th>
+              <th>จำนวน</th>
+              <th>มูลค่ารวม</th>
+              <th>ผู้บันทึก</th>
+              <th>หมายเหตุ</th>
+              <th style="text-align: center;">การจัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="detailGeneralBody"></tbody>
+        </table>
+      </div>
+
+      <div style="font-size: 0.85rem; font-weight: 700; color: var(--purple-main); margin: 12px 0 8px 0; display:flex; align-items:center; gap:6px;">
+        <span class="badge-pastel purple"><i data-lucide="users"></i> สินค้าแม่ชี</span> (<span id="countNun">0</span> รายการ)
+      </div>
+      <div style="overflow-x: auto;">
+        <table class="clean-table">
+          <thead>
+            <tr>
+              <th>รหัสอ้างอิง</th>
+              <th>จำนวน</th>
+              <th>มูลค่ารวม</th>
+              <th>ผู้บันทึก</th>
+              <th>หมายเหตุ</th>
+              <th style="text-align: center;">การจัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="detailNunBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div id="editModal" class="modal-backdrop">
+    <div class="modal-container" style="max-width: 480px;">
+      <div class="card-heading-row" style="margin-bottom: 16px;">
+        <div class="card-heading">แก้ไขข้อมูลรายการ (<span id="displayEditId"></span>)</div>
+        <button class="btn-clean" onclick="closeEditModal()"><i data-lucide="x"></i> ปิด</button>
+      </div>
+
+      <form id="editForm">
+        <input type="hidden" id="editId">
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div>
+            <label class="form-group-label">วันที่</label>
+            <div class="date-input-wrapper" style="width:100%;">
+              <i data-lucide="calendar"></i>
+              <input type="text" id="editDate" class="input-clean-field" style="width:100%; text-align:left;" required>
+            </div>
+          </div>
+          <div>
+            <label class="form-group-label">ประเภทสินค้า</label>
+            <select id="editItemType" class="input-clean-field" style="width:100%; text-align:left;" required>
+              <option value="ทั่วไป">ทั่วไป</option>
+              <option value="แม่ชี">แม่ชี</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-group-label">จำนวน (ชิ้น)</label>
+            <input type="number" id="editQuantity" class="input-clean-field" min="1" required>
+          </div>
+          <div>
+            <label class="form-group-label">มูลค่ารวม (บาท)</label>
+            <input type="number" id="editTotalPrice" class="input-clean-field" min="0" step="any" required>
+          </div>
+          <div>
+            <label class="form-group-label">ผู้บันทึก</label>
+            <input type="text" id="editRecorder" class="input-clean-field" required>
+          </div>
+          <div>
+            <label class="form-group-label">หมายเหตุ</label>
+            <input type="text" id="editNote" class="input-clean-field">
+          </div>
+          <div style="text-align: right; margin-top: 10px;">
+            <button type="submit" class="btn-primary btn-clean"><i data-lucide="save"></i> บันทึกการแก้ไข</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
