@@ -1,3 +1,4 @@
+// 1. ตั้งค่า Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDENUj0Rsdz4Lg9xlZWRAeqrafD9hWCVw0",
   authDomain: "pickup01-e696a.firebaseapp.com",
@@ -8,11 +9,13 @@ const firebaseConfig = {
   measurementId: "G-K1SV5Y5Z2P"
 };
 
+// 2. เริ่มต้นใช้งาน Firebase & Firestore
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.firestore();
 
+// 3. ตั้งค่า SweetAlert2 Toast แจ้งเตือนมุมขวาบน
 const Toast = Swal.mixin({
   toast: true,
   position: 'top-end',
@@ -30,6 +33,7 @@ let globalDailyGrouped = [];
 let currentDetailDate = null;
 let waveChartInstance = null;
 
+// 4. ทำงานเมื่อโหลด DOM เรียบร้อยแล้ว
 document.addEventListener('DOMContentLoaded', function() {
   initTheme();
   lucide.createIcons();
@@ -120,6 +124,7 @@ function openQuickFormFAB() {
   switchPage(null, 'form', document.querySelectorAll('.menu-item')[1]);
 }
 
+// 5. โหลดและซิงค์ข้อมูลแบบ Realtime จาก Firestore
 function initRealtimeListener() {
   db.collection("pickups").onSnapshot((snapshot) => {
     let rawItems = [];
@@ -472,52 +477,67 @@ function calculateFormLiveSummary() {
   if (livePriceElem) livePriceElem.innerText = totalPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
+// 6. ฟังก์ชันบันทึกข้อมูลใหม่พร้อม SweetAlert2 Confirmation Modal
 const pickupForm = document.getElementById('pickupForm');
 if (pickupForm) {
-  pickupForm.addEventListener('submit', async function(e) {
+  pickupForm.addEventListener('submit', function(e) {
     e.preventDefault();
-    const submitBtn = document.getElementById('submitBtn');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = `กำลังบันทึก...`;
 
-    try {
-      const itemRows = document.querySelectorAll('.form-item-grid');
-      const recordDate = document.getElementById('recordDate').value;
-      const recorder = document.getElementById('recorder').value;
+    Swal.fire({
+      title: 'ยืนยันการบันทึกข้อมูล?',
+      text: "โปรดตรวจสอบข้อมูลให้ถูกต้องก่อนบันทึกเข้าสู่ระบบ",
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#0f172a',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'ยืนยันบันทึก',
+      cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `กำลังบันทึก...`;
 
-      const batch = db.batch();
+        try {
+          const itemRows = document.querySelectorAll('.form-item-grid');
+          const recordDate = document.getElementById('recordDate').value;
+          const recorder = document.getElementById('recorder').value;
 
-      itemRows.forEach(row => {
-        const docRef = db.collection("pickups").doc();
-        batch.set(docRef, {
-          recordDate: recordDate,
-          recorder: recorder,
-          itemType: row.querySelector('.item-type').value,
-          quantity: Number(row.querySelector('.item-qty').value) || 0,
-          totalPrice: Number(row.querySelector('.item-price').value) || 0,
-          note: row.querySelector('.item-note').value || '',
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      });
+          const batch = db.batch();
 
-      await batch.commit();
+          itemRows.forEach(row => {
+            const docRef = db.collection("pickups").doc();
+            batch.set(docRef, {
+              recordDate: recordDate,
+              recorder: recorder,
+              itemType: row.querySelector('.item-type').value,
+              quantity: Number(row.querySelector('.item-qty').value) || 0,
+              totalPrice: Number(row.querySelector('.item-price').value) || 0,
+              note: row.querySelector('.item-note').value || '',
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          });
 
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
-      lucide.createIcons();
+          await batch.commit();
 
-      showToast('success', 'บันทึกข้อมูลเรียบร้อย');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
+          lucide.createIcons();
 
-      document.getElementById('pickupForm').reset();
-      initFlatpickr();
-      document.getElementById('itemsContainer').innerHTML = '';
-      addItemRow();
+          showToast('success', 'บันทึกข้อมูลเรียบร้อยแล้ว');
 
-    } catch (err) {
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
-      showToast('error', 'ข้อผิดพลาด: ' + err.message);
-    }
+          document.getElementById('pickupForm').reset();
+          initFlatpickr();
+          document.getElementById('itemsContainer').innerHTML = '';
+          addItemRow();
+
+        } catch (err) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
+          showToast('error', 'ข้อผิดพลาด: ' + err.message);
+        }
+      }
+    });
   });
 }
 
@@ -542,39 +562,54 @@ function closeEditModal() {
   document.getElementById('editModal').style.display = 'none';
 }
 
+// 7. ฟังก์ชันอัปเดตการแก้ไขข้อมูลพร้อม SweetAlert2 Confirmation Modal
 const editForm = document.getElementById('editForm');
 if (editForm) {
-  editForm.addEventListener('submit', async function(e) {
+  editForm.addEventListener('submit', function(e) {
     e.preventDefault();
     const editId = document.getElementById('editId').value;
 
-    try {
-      await db.collection("pickups").doc(editId).update({
-        recordDate: document.getElementById('editDate').value,
-        itemType: document.getElementById('editItemType').value,
-        quantity: Number(document.getElementById('editQuantity').value) || 0,
-        totalPrice: Number(document.getElementById('editTotalPrice').value) || 0,
-        note: document.getElementById('editNote').value || '',
-        recorder: document.getElementById('editRecorder').value || ''
-      });
+    Swal.fire({
+      title: 'ยืนยันการแก้ไขข้อมูล?',
+      text: `ต้องการอัปเดตข้อมูลรายการรหัส ${editId} ใช่หรือไม่`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#0f172a',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'ยืนยันการแก้ไข',
+      cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          await db.collection("pickups").doc(editId).update({
+            recordDate: document.getElementById('editDate').value,
+            itemType: document.getElementById('editItemType').value,
+            quantity: Number(document.getElementById('editQuantity').value) || 0,
+            totalPrice: Number(document.getElementById('editTotalPrice').value) || 0,
+            note: document.getElementById('editNote').value || '',
+            recorder: document.getElementById('editRecorder').value || ''
+          });
 
-      closeEditModal();
-      showToast('success', 'ปรับปรุงข้อมูลเรียบร้อยแล้ว');
-    } catch (err) {
-      showToast('error', 'ข้อผิดพลาด: ' + err.message);
-    }
+          closeEditModal();
+          showToast('success', 'ปรับปรุงข้อมูลเรียบร้อยแล้ว');
+        } catch (err) {
+          showToast('error', 'ข้อผิดพลาด: ' + err.message);
+        }
+      }
+    });
   });
 }
 
+// 8. ฟังก์ชันลบรายการพร้อม SweetAlert2 Confirmation Modal
 function deleteItem(id) {
   Swal.fire({
-    title: 'ยืนยันการลบ?',
-    text: `ต้องการลบรายการรหัส ${id} ใช่หรือไม่`,
+    title: 'ยืนยันการลบรายการ?',
+    text: `คุณกำลังจะลบรายการรหัส ${id} ข้อมูลนี้ไม่สามารถกู้คืนได้!`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#ef4444',
     cancelButtonColor: '#64748b',
-    confirmButtonText: 'ลบรายการ',
+    confirmButtonText: 'ใช่, ลบเลย!',
     cancelButtonText: 'ยกเลิก'
   }).then(async (result) => {
     if (result.isConfirmed) {
@@ -652,6 +687,5 @@ function exportToPDF() {
     showToast('warning', 'ไม่มีข้อมูลสำหรับส่งออก PDF');
     return;
   }
-  // เรียกหน้าต่างสั่งพิมพ์ของเบราว์เซอร์เพื่อบันทึกเป็น PDF
   window.print();
 }
