@@ -1,4 +1,4 @@
-// 1. ตั้งค่า Firebase Configuration
+// 1. Firebase Config
 const firebaseConfig = {
   apiKey: "AIzaSyDENUj0Rsdz4Lg9xlZWRAeqrafD9hWCVw0",
   authDomain: "pickup01-e696a.firebaseapp.com",
@@ -9,13 +9,21 @@ const firebaseConfig = {
   measurementId: "G-K1SV5Y5Z2P"
 };
 
-// 2. เริ่มต้นใช้งาน Firebase & Firestore
+// 2. Initialize Firebase
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.firestore();
+const auth = firebase.auth();
 
-// 3. ตั้งค่า SweetAlert2 Toast แจ้งเตือนมุมขวาบน
+// Global State
+let currentUser = null;
+let userRole = 'staff'; // Default 'staff' or 'admin'
+let allRawItems = [];
+let globalDailyGrouped = [];
+let currentDetailDate = null;
+let waveChartInstance = null;
+
 const Toast = Swal.mixin({
   toast: true,
   position: 'top-end',
@@ -28,29 +36,105 @@ function showToast(icon, title) {
   Toast.fire({ icon: icon, title: title });
 }
 
-let allRawItems = [];
-let globalDailyGrouped = [];
-let currentDetailDate = null;
-let waveChartInstance = null;
-
-// 4. ทำงานเมื่อโหลด DOM เรียบร้อยแล้ว
+// 3. Auth Listener & App Lifecycle
 document.addEventListener('DOMContentLoaded', function() {
   initTheme();
   lucide.createIcons();
   initFlatpickr();
   addItemRow();
   initKeyboardShortcuts();
-  initRealtimeListener();
   initLiveFormCalculation();
+
+  // Auth State Observer
+  auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      currentUser = user;
+      document.getElementById('loginModal').style.display = 'none';
+      document.getElementById('userProfileBox').style.display = 'flex';
+      
+      // Auto-fill recorder field
+      document.getElementById('recorder').value = user.email.split('@')[0];
+
+      // Fetch User Role from Firestore 'users' collection
+      try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+          userRole = userDoc.data().role || 'staff';
+        } else {
+          // If first time, register user doc as default 'staff'
+          userRole = 'staff';
+          await db.collection('users').doc(user.uid).set({
+            email: user.email,
+            role: 'staff',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      } catch (err) {
+        console.error("Fetch Role Error:", err);
+        userRole = 'staff';
+      }
+
+      updateUserUI();
+      initRealtimeListener();
+
+    } else {
+      currentUser = null;
+      userRole = 'staff';
+      document.getElementById('loginModal').style.display = 'flex';
+      document.getElementById('userProfileBox').style.display = 'none';
+    }
+  });
 });
 
-/* Dark / Light Theme Toggle Functions */
+// Handle Login Form
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value.trim();
+  const loginBtn = document.getElementById('loginBtn');
+
+  loginBtn.disabled = true;
+  loginBtn.innerHTML = 'กำลังตรวจสอบ...';
+
+  try {
+    await auth.signInWithEmailAndPassword(email, password);
+    showToast('success', 'เข้าสู่ระบบสำเร็จ');
+  } catch (err) {
+    showToast('error', 'เข้าสู่ระบบไม่สำเร็จ: ' + err.message);
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.innerHTML = `<i data-lucide="log-in"></i> เข้าสู่ระบบ`;
+    lucide.createIcons();
+  }
+});
+
+function logoutUser() {
+  auth.signOut().then(() => {
+    showToast('success', 'ออกจากระบบเรียบร้อย');
+    location.reload();
+  });
+}
+
+function updateUserUI() {
+  if (!currentUser) return;
+  document.getElementById('userEmail').innerText = currentUser.email;
+  document.getElementById('userAvatar').innerText = currentUser.email.charAt(0).toUpperCase();
+
+  const badgeElem = document.getElementById('userRoleBadge');
+  badgeElem.innerText = userRole.toUpperCase();
+  badgeElem.className = `role-badge ${userRole}`;
+
+  // Hide edit/delete options in UI if Staff
+  const adminCols = document.querySelectorAll('.admin-col');
+  adminCols.forEach(col => {
+    col.style.display = (userRole === 'admin') ? '' : 'none';
+  });
+}
+
 function initTheme() {
   const savedTheme = localStorage.getItem('theme');
   const isDark = savedTheme === 'dark';
-  if (isDark) {
-    document.body.classList.add('dark-theme');
-  }
+  if (isDark) document.body.classList.add('dark-theme');
   updateThemeIcon(isDark);
 }
 
@@ -59,10 +143,7 @@ function toggleTheme() {
   const isDark = document.body.classList.contains('dark-theme');
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
   updateThemeIcon(isDark);
-
-  if (globalDailyGrouped) {
-    renderWaveGradientChart(globalDailyGrouped);
-  }
+  if (globalDailyGrouped) renderWaveGradientChart(globalDailyGrouped);
 }
 
 function updateThemeIcon(isDark) {
@@ -75,14 +156,7 @@ function updateThemeIcon(isDark) {
 
 function initFlatpickr() {
   const today = new Date().toISOString().split('T')[0];
-
-  flatpickr("#recordDate", {
-    locale: "th",
-    dateFormat: "Y-m-d",
-    defaultDate: today,
-    disableMobile: true
-  });
-
+  flatpickr("#recordDate", { locale: "th", dateFormat: "Y-m-d", defaultDate: today, disableMobile: true });
   flatpickr("#filterStartDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
   flatpickr("#filterEndDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
   flatpickr("#editDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
@@ -124,7 +198,6 @@ function openQuickFormFAB() {
   switchPage(null, 'form', document.querySelectorAll('.menu-item')[1]);
 }
 
-// 5. โหลดและซิงค์ข้อมูลแบบ Realtime จาก Firestore
 function initRealtimeListener() {
   db.collection("pickups").onSnapshot((snapshot) => {
     let rawItems = [];
@@ -147,7 +220,6 @@ function initRealtimeListener() {
     applyCurrentFilters();
   }, (error) => {
     console.error("Connection Error: ", error);
-    showToast('error', 'การเชื่อมต่อขัดข้อง');
   });
 }
 
@@ -218,7 +290,6 @@ function updateDashboard(s) {
   document.getElementById('dashRatioPercent').innerText = genRatio + "% ทั่วไป";
 }
 
-/* Fintech Teal & Indigo Wave Gradient Chart */
 function renderWaveGradientChart(dailyGrouped) {
   const canvas = document.getElementById('proportionWaveChart');
   if (!canvas) return;
@@ -229,16 +300,14 @@ function renderWaveGradientChart(dailyGrouped) {
   const gridColor = isDark ? '#334155' : '#e2e8f0';
   const textColor = isDark ? '#cbd5e1' : '#475569';
 
-  const labels = dailyGrouped.map(g => g.date.slice(5)); // MM-DD
+  const labels = dailyGrouped.map(g => g.date.slice(5));
   const genData = dailyGrouped.map(g => (g.breakdown['ทั่วไป'] ? g.breakdown['ทั่วไป'].qty : 0));
   const nunData = dailyGrouped.map(g => (g.breakdown['แม่ชี'] ? g.breakdown['แม่ชี'].qty : 0));
 
-  // Muted Teal Gradient
   const gradGen = ctx.createLinearGradient(0, 0, 0, 200);
   gradGen.addColorStop(0, isDark ? 'rgba(45, 212, 191, 0.35)' : 'rgba(13, 148, 136, 0.35)');
   gradGen.addColorStop(1, 'rgba(13, 148, 136, 0.01)');
 
-  // Soft Indigo Gradient
   const gradNun = ctx.createLinearGradient(0, 0, 0, 200);
   gradNun.addColorStop(0, isDark ? 'rgba(129, 140, 248, 0.35)' : 'rgba(99, 102, 241, 0.35)');
   gradNun.addColorStop(1, 'rgba(99, 102, 241, 0.01)');
@@ -249,7 +318,7 @@ function renderWaveGradientChart(dailyGrouped) {
       labels: labels.length ? labels : ['ไม่มีข้อมูล'],
       datasets: [
         {
-          label: 'สินค้าทั่วไป (Teal)',
+          label: 'สินค้าทั่วไป',
           data: genData.length ? genData : [0],
           borderColor: isDark ? '#2dd4bf' : '#0d9488',
           borderWidth: 2.5,
@@ -257,11 +326,10 @@ function renderWaveGradientChart(dailyGrouped) {
           fill: true,
           tension: 0.45,
           pointRadius: 4,
-          pointHoverRadius: 6,
-          pointBackgroundColor: isDark ? '#2dd4bf' : '#0d9488'
+          pointHoverRadius: 6
         },
         {
-          label: 'สินค้าแม่ชี (Indigo)',
+          label: 'สินค้าแม่ชี',
           data: nunData.length ? nunData : [0],
           borderColor: isDark ? '#818cf8' : '#6366f1',
           borderWidth: 2.5,
@@ -269,8 +337,7 @@ function renderWaveGradientChart(dailyGrouped) {
           fill: true,
           tension: 0.45,
           pointRadius: 4,
-          pointHoverRadius: 6,
-          pointBackgroundColor: isDark ? '#818cf8' : '#6366f1'
+          pointHoverRadius: 6
         }
       ]
     },
@@ -278,10 +345,7 @@ function renderWaveGradientChart(dailyGrouped) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          position: 'top',
-          labels: { font: { family: 'Prompt, sans-serif', size: 11 }, color: textColor, boxWidth: 12 }
-        }
+        legend: { position: 'top', labels: { font: { family: 'Prompt', size: 11 }, color: textColor, boxWidth: 12 } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { family: 'Plus Jakarta Sans', size: 10 }, color: textColor } },
@@ -305,7 +369,6 @@ function renderDailyTable(dailyGrouped) {
           <div class="empty-state-box">
             <div class="empty-state-icon"><i data-lucide="inbox"></i></div>
             <div style="font-weight:600; color:var(--text-main);">ไม่พบข้อมูลรายการ</div>
-            <div style="font-size:0.78rem; margin-top:2px;">ลองปรับตัวกรองวันที่หรือค้นหาใหม่อีกครั้ง</div>
             <button class="btn-clean" style="margin-top:12px; font-size:0.75rem;" onclick="resetFilter()"><i data-lucide="rotate-ccw"></i> ล้างตัวกรอง</button>
           </div>
         </td>
@@ -382,22 +445,29 @@ function openDetailModal(dateStr) {
   if (nunItems.length === 0) nunBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:16px;">ไม่มีรายการสินค้าแม่ชี</td></tr>';
   else nunItems.forEach(row => nunBody.appendChild(createDetailRow(row)));
 
+  updateUserUI(); // Re-apply role permissions
   lucide.createIcons();
   document.getElementById('detailModal').style.display = 'flex';
 }
 
 function createDetailRow(row) {
   const tr = document.createElement('tr');
+
+  // Show action buttons ONLY if user is Admin
+  const actionBtnsHTML = (userRole === 'admin') ? `
+    <td style="text-align: center;" class="admin-col">
+      <button class="btn-clean" style="padding: 2px 8px; font-size: 0.72rem;" onclick="openEditModal('${row[0]}')"><i data-lucide="edit-3"></i></button>
+      <button class="btn-clean" style="padding: 2px 8px; font-size: 0.72rem; color: #ef4444;" onclick="deleteItem('${row[0]}')"><i data-lucide="trash-2"></i></button>
+    </td>
+  ` : `<td style="display:none;" class="admin-col"></td>`;
+
   tr.innerHTML = `
     <td><small style="color: var(--text-muted);">${row[0]}</small></td>
     <td>${Number(row[3]).toLocaleString()}</td>
     <td style="font-weight:600;">${Number(row[5]).toLocaleString()} บาท</td>
     <td>${row[7]}</td>
     <td><span style="color: var(--text-muted);">${row[6]}</span></td>
-    <td style="text-align: center;">
-      <button class="btn-clean" style="padding: 2px 8px; font-size: 0.72rem;" onclick="openEditModal('${row[0]}')"><i data-lucide="edit-3"></i></button>
-      <button class="btn-clean" style="padding: 2px 8px; font-size: 0.72rem; color: #ef4444;" onclick="deleteItem('${row[0]}')"><i data-lucide="trash-2"></i></button>
-    </td>
+    ${actionBtnsHTML}
   `;
   return tr;
 }
@@ -451,97 +521,90 @@ function removeItemRow(btn) {
   }
 }
 
-/* Live Form Calculation */
 function initLiveFormCalculation() {
   const container = document.getElementById('itemsContainer');
-  if (container) {
-    container.addEventListener('input', calculateFormLiveSummary);
-  }
+  if (container) container.addEventListener('input', calculateFormLiveSummary);
 }
 
 function calculateFormLiveSummary() {
-  let totalQty = 0;
-  let totalPrice = 0;
-
+  let totalQty = 0, totalPrice = 0;
   document.querySelectorAll('.form-item-grid').forEach(row => {
-    const q = Number(row.querySelector('.item-qty').value) || 0;
-    const p = Number(row.querySelector('.item-price').value) || 0;
-    totalQty += q;
-    totalPrice += p;
+    totalQty += Number(row.querySelector('.item-qty').value) || 0;
+    totalPrice += Number(row.querySelector('.item-price').value) || 0;
   });
 
   const liveQtyElem = document.getElementById('liveTotalQty');
   const livePriceElem = document.getElementById('liveTotalPrice');
-
   if (liveQtyElem) liveQtyElem.innerText = totalQty.toLocaleString();
   if (livePriceElem) livePriceElem.innerText = totalPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
-// 6. ฟังก์ชันบันทึกข้อมูลใหม่พร้อม SweetAlert2 Confirmation Modal
-const pickupForm = document.getElementById('pickupForm');
-if (pickupForm) {
-  pickupForm.addEventListener('submit', function(e) {
-    e.preventDefault();
+// Form Submit (Both Staff and Admin can record)
+document.getElementById('pickupForm').addEventListener('submit', function(e) {
+  e.preventDefault();
 
-    Swal.fire({
-      title: 'ยืนยันการบันทึกข้อมูล?',
-      text: "โปรดตรวจสอบข้อมูลให้ถูกต้องก่อนบันทึกเข้าสู่ระบบ",
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#0f172a',
-      cancelButtonColor: '#64748b',
-      confirmButtonText: 'ยืนยันบันทึก',
-      cancelButtonText: 'ยกเลิก'
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        const submitBtn = document.getElementById('submitBtn');
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `กำลังบันทึก...`;
+  Swal.fire({
+    title: 'ยืนยันการบันทึกข้อมูล?',
+    text: "โปรดตรวจสอบข้อมูลให้ถูกต้องก่อนบันทึกเข้าสู่ระบบ",
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#0f172a',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'ยืนยันบันทึก',
+    cancelButtonText: 'ยกเลิก'
+  }).then(async (result) => {
+    if (result.isConfirmed) {
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `กำลังบันทึก...`;
 
-        try {
-          const itemRows = document.querySelectorAll('.form-item-grid');
-          const recordDate = document.getElementById('recordDate').value;
-          const recorder = document.getElementById('recorder').value;
+      try {
+        const itemRows = document.querySelectorAll('.form-item-grid');
+        const recordDate = document.getElementById('recordDate').value;
+        const recorder = document.getElementById('recorder').value;
 
-          const batch = db.batch();
+        const batch = db.batch();
 
-          itemRows.forEach(row => {
-            const docRef = db.collection("pickups").doc();
-            batch.set(docRef, {
-              recordDate: recordDate,
-              recorder: recorder,
-              itemType: row.querySelector('.item-type').value,
-              quantity: Number(row.querySelector('.item-qty').value) || 0,
-              totalPrice: Number(row.querySelector('.item-price').value) || 0,
-              note: row.querySelector('.item-note').value || '',
-              createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
+        itemRows.forEach(row => {
+          const docRef = db.collection("pickups").doc();
+          batch.set(docRef, {
+            recordDate: recordDate,
+            recorder: recorder,
+            itemType: row.querySelector('.item-type').value,
+            quantity: Number(row.querySelector('.item-qty').value) || 0,
+            totalPrice: Number(row.querySelector('.item-price').value) || 0,
+            note: row.querySelector('.item-note').value || '',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
+        });
 
-          await batch.commit();
+        await batch.commit();
 
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
-          lucide.createIcons();
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
+        lucide.createIcons();
 
-          showToast('success', 'บันทึกข้อมูลเรียบร้อยแล้ว');
+        showToast('success', 'บันทึกข้อมูลเรียบร้อยแล้ว');
+        document.getElementById('pickupForm').reset();
+        document.getElementById('recorder').value = currentUser ? currentUser.email.split('@')[0] : '';
+        initFlatpickr();
+        document.getElementById('itemsContainer').innerHTML = '';
+        addItemRow();
 
-          document.getElementById('pickupForm').reset();
-          initFlatpickr();
-          document.getElementById('itemsContainer').innerHTML = '';
-          addItemRow();
-
-        } catch (err) {
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
-          showToast('error', 'ข้อผิดพลาด: ' + err.message);
-        }
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i data-lucide="save"></i> ยืนยันบันทึกข้อมูล`;
+        showToast('error', 'ข้อผิดพลาด: ' + err.message);
       }
-    });
+    }
   });
-}
+});
 
 function openEditModal(id) {
+  if (userRole !== 'admin') {
+    showToast('error', 'สิทธิ์ไม่เพียงพอ! เฉพาะ Admin เท่านั้น');
+    return;
+  }
   const targetItem = allRawItems.find(r => r[0] === id);
   if (!targetItem) return;
 
@@ -562,46 +625,53 @@ function closeEditModal() {
   document.getElementById('editModal').style.display = 'none';
 }
 
-// 7. ฟังก์ชันอัปเดตการแก้ไขข้อมูลพร้อม SweetAlert2 Confirmation Modal
-const editForm = document.getElementById('editForm');
-if (editForm) {
-  editForm.addEventListener('submit', function(e) {
-    e.preventDefault();
-    const editId = document.getElementById('editId').value;
+// Edit Submit (Admin only)
+document.getElementById('editForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (userRole !== 'admin') {
+    showToast('error', 'สิทธิ์ไม่เพียงพอ! เฉพาะ Admin เท่านั้น');
+    return;
+  }
 
-    Swal.fire({
-      title: 'ยืนยันการแก้ไขข้อมูล?',
-      text: `ต้องการอัปเดตข้อมูลรายการรหัส ${editId} ใช่หรือไม่`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#0f172a',
-      cancelButtonColor: '#64748b',
-      confirmButtonText: 'ยืนยันการแก้ไข',
-      cancelButtonText: 'ยกเลิก'
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          await db.collection("pickups").doc(editId).update({
-            recordDate: document.getElementById('editDate').value,
-            itemType: document.getElementById('editItemType').value,
-            quantity: Number(document.getElementById('editQuantity').value) || 0,
-            totalPrice: Number(document.getElementById('editTotalPrice').value) || 0,
-            note: document.getElementById('editNote').value || '',
-            recorder: document.getElementById('editRecorder').value || ''
-          });
+  const editId = document.getElementById('editId').value;
 
-          closeEditModal();
-          showToast('success', 'ปรับปรุงข้อมูลเรียบร้อยแล้ว');
-        } catch (err) {
-          showToast('error', 'ข้อผิดพลาด: ' + err.message);
-        }
+  Swal.fire({
+    title: 'ยืนยันการแก้ไขข้อมูล?',
+    text: `ต้องการอัปเดตข้อมูลรายการรหัส ${editId} ใช่หรือไม่`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#0f172a',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'ยืนยันการแก้ไข',
+    cancelButtonText: 'ยกเลิก'
+  }).then(async (result) => {
+    if (result.isConfirmed) {
+      try {
+        await db.collection("pickups").doc(editId).update({
+          recordDate: document.getElementById('editDate').value,
+          itemType: document.getElementById('editItemType').value,
+          quantity: Number(document.getElementById('editQuantity').value) || 0,
+          totalPrice: Number(document.getElementById('editTotalPrice').value) || 0,
+          note: document.getElementById('editNote').value || '',
+          recorder: document.getElementById('editRecorder').value || ''
+        });
+
+        closeEditModal();
+        showToast('success', 'ปรับปรุงข้อมูลเรียบร้อยแล้ว');
+      } catch (err) {
+        showToast('error', 'ข้อผิดพลาด: ' + err.message);
       }
-    });
+    }
   });
-}
+});
 
-// 8. ฟังก์ชันลบรายการพร้อม SweetAlert2 Confirmation Modal
+// Delete Item (Admin only)
 function deleteItem(id) {
+  if (userRole !== 'admin') {
+    showToast('error', 'สิทธิ์ไม่เพียงพอ! เฉพาะ Admin เท่านั้น');
+    return;
+  }
+
   Swal.fire({
     title: 'ยืนยันการลบรายการ?',
     text: `คุณกำลังจะลบรายการรหัส ${id} ข้อมูลนี้ไม่สามารถกู้คืนได้!`,
