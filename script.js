@@ -1,4 +1,6 @@
-// 1. Firebase Config
+// ==========================================================================
+// 1. CONFIG & GLOBAL STATE
+// ==========================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyDENUj0Rsdz4Lg9xlZWRAeqrafD9hWCVw0",
   authDomain: "pickup01-e696a.firebaseapp.com",
@@ -9,20 +11,21 @@ const firebaseConfig = {
   measurementId: "G-K1SV5Y5Z2P"
 };
 
-// 2. Initialize Firebase
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
+
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-// Global State
-let currentUser = null;
-let userRole = 'staff'; // Default 'staff' or 'admin'
-let allRawItems = [];
-let globalDailyGrouped = [];
-let currentDetailDate = null;
-let waveChartInstance = null;
+const STATE = {
+  currentUser: null,
+  userRole: 'staff',
+  rawItems: [],
+  dailyGrouped: [],
+  currentDetailDate: null,
+  chartInstance: null
+};
 
 const Toast = Swal.mixin({
   toast: true,
@@ -33,36 +36,33 @@ const Toast = Swal.mixin({
 });
 
 function showToast(icon, title) {
-  Toast.fire({ icon: icon, title: title });
+  Toast.fire({ icon, title });
 }
 
-// 3. Auth Listener & App Lifecycle
-document.addEventListener('DOMContentLoaded', function() {
+// ==========================================================================
+// 2. AUTHENTICATION & ROLE MANAGEMENT
+// ==========================================================================
+document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   lucide.createIcons();
   initFlatpickr();
   addItemRow();
-  initKeyboardShortcuts();
-  initLiveFormCalculation();
+  bindGlobalEvents();
 
-  // Auth State Observer
+  // Auth Observer
   auth.onAuthStateChanged(async (user) => {
     if (user) {
-      currentUser = user;
+      STATE.currentUser = user;
       document.getElementById('loginModal').style.display = 'none';
       document.getElementById('userProfileBox').style.display = 'flex';
-      
-      // Auto-fill recorder field
       document.getElementById('recorder').value = user.email.split('@')[0];
 
-      // Fetch User Role from Firestore 'users' collection
       try {
         const userDoc = await db.collection('users').doc(user.uid).get();
         if (userDoc.exists) {
-          userRole = userDoc.data().role || 'staff';
+          STATE.userRole = userDoc.data().role || 'staff';
         } else {
-          // If first time, register user doc as default 'staff'
-          userRole = 'staff';
+          STATE.userRole = 'staff';
           await db.collection('users').doc(user.uid).set({
             email: user.email,
             role: 'staff',
@@ -71,23 +71,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       } catch (err) {
         console.error("Fetch Role Error:", err);
-        userRole = 'staff';
+        STATE.userRole = 'staff';
       }
 
       updateUserUI();
       initRealtimeListener();
 
     } else {
-      currentUser = null;
-      userRole = 'staff';
+      STATE.currentUser = null;
+      STATE.userRole = 'staff';
       document.getElementById('loginModal').style.display = 'flex';
       document.getElementById('userProfileBox').style.display = 'none';
     }
   });
 });
 
-// Handle Login Form
-document.getElementById('loginForm').addEventListener('submit', async function(e) {
+function updateUserUI() {
+  if (!STATE.currentUser) return;
+  document.getElementById('userEmail').innerText = STATE.currentUser.email;
+  document.getElementById('userAvatar').innerText = STATE.currentUser.email.charAt(0).toUpperCase();
+
+  const badge = document.getElementById('userRoleBadge');
+  badge.innerText = STATE.userRole.toUpperCase();
+  badge.className = `role-badge ${STATE.userRole}`;
+
+  // Toggle CSS attribute for role-based access control
+  document.body.setAttribute('data-role', STATE.userRole);
+}
+
+// Handle Login
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value.trim();
@@ -115,64 +128,54 @@ function logoutUser() {
   });
 }
 
-function updateUserUI() {
-  if (!currentUser) return;
-  document.getElementById('userEmail').innerText = currentUser.email;
-  document.getElementById('userAvatar').innerText = currentUser.email.charAt(0).toUpperCase();
-
-  const badgeElem = document.getElementById('userRoleBadge');
-  badgeElem.innerText = userRole.toUpperCase();
-  badgeElem.className = `role-badge ${userRole}`;
-
-  // Hide edit/delete options in UI if Staff
-  const adminCols = document.querySelectorAll('.admin-col');
-  adminCols.forEach(col => {
-    col.style.display = (userRole === 'admin') ? '' : 'none';
+// ==========================================================================
+// 3. EVENT BINDING & NAVIGATION
+// ==========================================================================
+function bindGlobalEvents() {
+  // Navigation Tabs
+  document.querySelectorAll('[data-page]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      const pageId = el.getAttribute('data-page');
+      switchPage(pageId);
+    });
   });
-}
 
-function initTheme() {
-  const savedTheme = localStorage.getItem('theme');
-  const isDark = savedTheme === 'dark';
-  if (isDark) document.body.classList.add('dark-theme');
-  updateThemeIcon(isDark);
-}
+  // Action Buttons
+  document.getElementById('btnLogout').addEventListener('click', logoutUser);
+  document.getElementById('btnApplyFilter').addEventListener('click', applyCurrentFilters);
+  document.getElementById('btnThemeToggle').addEventListener('click', toggleTheme);
+  document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
+  document.getElementById('btnExportPDF').addEventListener('click', () => window.print());
+  document.getElementById('btnQuick7Days').addEventListener('click', () => setQuickDate('7days'));
+  document.getElementById('btnQuickMonth').addEventListener('click', () => setQuickDate('thisMonth'));
+  document.getElementById('btnAddRow').addEventListener('click', addItemRow);
+  document.getElementById('fabQuickForm').addEventListener('click', () => switchPage('form'));
+  document.getElementById('btnCloseDetail').addEventListener('click', closeDetailModal);
+  document.getElementById('btnCloseEdit').addEventListener('click', closeEditModal);
 
-function toggleTheme() {
-  document.body.classList.toggle('dark-theme');
-  const isDark = document.body.classList.contains('dark-theme');
-  localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  updateThemeIcon(isDark);
-  if (globalDailyGrouped) renderWaveGradientChart(globalDailyGrouped);
-}
+  // Search Listeners
+  document.getElementById('topGlobalSearch').addEventListener('keyup', liveSearchDailyTable);
+  document.getElementById('detailTableSearch').addEventListener('keyup', liveSearchDetailModal);
 
-function updateThemeIcon(isDark) {
-  const iconElem = document.getElementById('themeIcon');
-  if (iconElem) {
-    iconElem.setAttribute('data-lucide', isDark ? 'sun' : 'moon');
-    lucide.createIcons();
-  }
-}
+  // Dynamic Live Total Calculator
+  document.getElementById('itemsContainer').addEventListener('input', calculateFormLiveSummary);
 
-function initFlatpickr() {
-  const today = new Date().toISOString().split('T')[0];
-  flatpickr("#recordDate", { locale: "th", dateFormat: "Y-m-d", defaultDate: today, disableMobile: true });
-  flatpickr("#filterStartDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
-  flatpickr("#filterEndDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
-  flatpickr("#editDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
-}
+  // Form Submissions
+  document.getElementById('pickupForm').addEventListener('submit', handlePickupSubmit);
+  document.getElementById('editForm').addEventListener('submit', handleEditSubmit);
 
-function initKeyboardShortcuts() {
-  document.addEventListener('keydown', function(e) {
+  // Keyboard Shortcuts
+  document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      switchPage(null, 'dashboard', document.querySelectorAll('.menu-item')[0]);
-      const s = document.getElementById('topGlobalSearch');
-      if (s) { s.focus(); s.select(); }
+      switchPage('dashboard');
+      const searchInput = document.getElementById('topGlobalSearch');
+      if (searchInput) { searchInput.focus(); searchInput.select(); }
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
       e.preventDefault();
-      switchPage(null, 'form', document.querySelectorAll('.menu-item')[1]);
+      switchPage('form');
     }
     if (e.key === 'Escape') {
       closeDetailModal();
@@ -181,23 +184,24 @@ function initKeyboardShortcuts() {
   });
 }
 
-function switchPage(e, pageId, element) {
-  if (e) e.preventDefault();
+function switchPage(pageId) {
   document.querySelectorAll('.page-section').forEach(sec => sec.classList.remove('active'));
   document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
   document.querySelectorAll('.segmented-tab').forEach(t => t.classList.remove('active'));
 
-  document.getElementById('page-' + pageId).classList.add('active');
-  
-  const idx = pageId === 'dashboard' ? 0 : 1;
-  document.querySelectorAll('.menu-item')[idx].classList.add('active');
-  document.querySelectorAll('.segmented-tab')[idx].classList.add('active');
+  const targetPage = document.getElementById('page-' + pageId);
+  if (targetPage) targetPage.classList.add('active');
+
+  document.querySelectorAll(`[data-page="${pageId}"]`).forEach(el => {
+    if (el.classList.contains('menu-item') || el.classList.contains('segmented-tab')) {
+      el.classList.add('active');
+    }
+  });
 }
 
-function openQuickFormFAB() {
-  switchPage(null, 'form', document.querySelectorAll('.menu-item')[1]);
-}
-
+// ==========================================================================
+// 4. DATABASE & REALTIME LISTENER
+// ==========================================================================
 function initRealtimeListener() {
   db.collection("pickups").onSnapshot((snapshot) => {
     let rawItems = [];
@@ -216,19 +220,22 @@ function initRealtimeListener() {
       ]);
     });
 
-    allRawItems = rawItems;
+    STATE.rawItems = rawItems;
     applyCurrentFilters();
   }, (error) => {
-    console.error("Connection Error: ", error);
+    console.error("Firestore Listener Error: ", error);
   });
 }
 
+// ==========================================================================
+// 5. DATA PROCESSING & FILTERS
+// ==========================================================================
 function applyCurrentFilters() {
   const startDate = document.getElementById('filterStartDate').value;
   const endDate = document.getElementById('filterEndDate').value;
   const itemType = document.getElementById('filterItemType').value;
 
-  let filtered = [...allRawItems];
+  let filtered = [...STATE.rawItems];
 
   if (startDate) filtered = filtered.filter(row => row[1] >= startDate);
   if (endDate) filtered = filtered.filter(row => row[1] <= endDate);
@@ -268,15 +275,18 @@ function processAndRenderData(filteredItems) {
     groupedMap[dateStr].items.push(row);
   });
 
-  globalDailyGrouped = Object.values(groupedMap).sort((a, b) => a.date.localeCompare(b.date));
+  STATE.dailyGrouped = Object.values(groupedMap).sort((a, b) => a.date.localeCompare(b.date));
 
   updateDashboard({ totalQty, totalPrice, generalQty, generalPrice, nunQty, nunPrice });
-  renderDailyTable(globalDailyGrouped);
-  renderWaveGradientChart(globalDailyGrouped);
+  renderDailyTable(STATE.dailyGrouped);
+  renderWaveGradientChart(STATE.dailyGrouped);
 
-  if (currentDetailDate) openDetailModal(currentDetailDate);
+  if (STATE.currentDetailDate) openDetailModal(STATE.currentDetailDate);
 }
 
+// ==========================================================================
+// 6. UI RENDERERS & CHARTS
+// ==========================================================================
 function updateDashboard(s) {
   document.getElementById('dashTotalQty').innerText = (s.totalQty || 0).toLocaleString();
   document.getElementById('dashTotalPrice').innerText = (s.totalPrice || 0).toLocaleString() + " บาท";
@@ -290,11 +300,84 @@ function updateDashboard(s) {
   document.getElementById('dashRatioPercent').innerText = genRatio + "% ทั่วไป";
 }
 
+function renderDailyTable(dailyGrouped) {
+  const tbody = document.getElementById('dailyTableBody');
+  const tfoot = document.getElementById('dailyTableFoot');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  if (tfoot) tfoot.innerHTML = '';
+
+  if (!dailyGrouped || dailyGrouped.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5">
+          <div class="empty-state-box">
+            <div class="empty-state-icon"><i data-lucide="inbox"></i></div>
+            <div class="text-main" style="font-weight:600;">ไม่พบข้อมูลรายการ</div>
+            <button class="btn-clean btn-xs mt-sm" id="btnResetFilter"><i data-lucide="rotate-ccw"></i> ล้างตัวกรอง</button>
+          </div>
+        </td>
+      </tr>
+    `;
+    document.getElementById('btnResetFilter')?.addEventListener('click', resetFilter);
+    lucide.createIcons();
+    return;
+  }
+
+  let grandQty = 0, grandPrice = 0;
+
+  dailyGrouped.forEach(group => {
+    const genQty = (group.breakdown && group.breakdown['ทั่วไป']) ? group.breakdown['ทั่วไป'].qty : 0;
+    const nunQty = (group.breakdown && group.breakdown['แม่ชี']) ? group.breakdown['แม่ชี'].qty : 0;
+
+    grandQty += group.totalQty;
+    grandPrice += group.totalPrice;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${group.date}</strong></td>
+      <td>${group.totalQty.toLocaleString()} ชิ้น</td>
+      <td class="text-emerald" style="font-weight: 600;">${group.totalPrice.toLocaleString()} บาท</td>
+      <td>
+        <div style="display:flex; gap:6px;">
+          <span class="badge-pastel emerald">ทั่วไป: ${genQty}</span>
+          <span class="badge-pastel purple">แม่ชี: ${nunQty}</span>
+        </div>
+      </td>
+      <td class="text-center">
+        <button class="btn-clean btn-xs btn-view-detail" data-date="${group.date}">
+          ดูรายละเอียด (${group.items.length})
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Bind View Detail Buttons
+  document.querySelectorAll('.btn-view-detail').forEach(btn => {
+    btn.addEventListener('click', () => openDetailModal(btn.getAttribute('data-date')));
+  });
+
+  if (tfoot) {
+    tfoot.innerHTML = `
+      <tr>
+        <td>รวมทั้งสิ้น (${dailyGrouped.length} วัน)</td>
+        <td>${grandQty.toLocaleString()} ชิ้น</td>
+        <td class="text-emerald">${grandPrice.toLocaleString()} บาท</td>
+        <td colspan="2" class="text-right text-muted-sm">สรุปยอดช่วงเวลาที่เลือก</td>
+      </tr>
+    `;
+  }
+
+  lucide.createIcons();
+}
+
 function renderWaveGradientChart(dailyGrouped) {
   const canvas = document.getElementById('proportionWaveChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  if (waveChartInstance) waveChartInstance.destroy();
+  if (STATE.chartInstance) STATE.chartInstance.destroy();
 
   const isDark = document.body.classList.contains('dark-theme');
   const gridColor = isDark ? '#334155' : '#e2e8f0';
@@ -312,7 +395,7 @@ function renderWaveGradientChart(dailyGrouped) {
   gradNun.addColorStop(0, isDark ? 'rgba(129, 140, 248, 0.35)' : 'rgba(99, 102, 241, 0.35)');
   gradNun.addColorStop(1, 'rgba(99, 102, 241, 0.01)');
 
-  waveChartInstance = new Chart(ctx, {
+  STATE.chartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels: labels.length ? labels : ['ไม่มีข้อมูล'],
@@ -355,75 +438,12 @@ function renderWaveGradientChart(dailyGrouped) {
   });
 }
 
-function renderDailyTable(dailyGrouped) {
-  const tbody = document.getElementById('dailyTableBody');
-  const tfoot = document.getElementById('dailyTableFoot');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  if (tfoot) tfoot.innerHTML = '';
-
-  if (!dailyGrouped || dailyGrouped.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="5">
-          <div class="empty-state-box">
-            <div class="empty-state-icon"><i data-lucide="inbox"></i></div>
-            <div style="font-weight:600; color:var(--text-main);">ไม่พบข้อมูลรายการ</div>
-            <button class="btn-clean" style="margin-top:12px; font-size:0.75rem;" onclick="resetFilter()"><i data-lucide="rotate-ccw"></i> ล้างตัวกรอง</button>
-          </div>
-        </td>
-      </tr>
-    `;
-    lucide.createIcons();
-    return;
-  }
-
-  let grandQty = 0, grandPrice = 0;
-
-  dailyGrouped.forEach(group => {
-    const genQty = (group.breakdown && group.breakdown['ทั่วไป']) ? group.breakdown['ทั่วไป'].qty : 0;
-    const nunQty = (group.breakdown && group.breakdown['แม่ชี']) ? group.breakdown['แม่ชี'].qty : 0;
-
-    grandQty += group.totalQty;
-    grandPrice += group.totalPrice;
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${group.date}</strong></td>
-      <td>${group.totalQty.toLocaleString()} ชิ้น</td>
-      <td style="font-weight: 600; color: var(--emerald-main);">${group.totalPrice.toLocaleString()} บาท</td>
-      <td>
-        <div style="display:flex; gap:6px;">
-          <span class="badge-pastel emerald">ทั่วไป: ${genQty}</span>
-          <span class="badge-pastel purple">แม่ชี: ${nunQty}</span>
-        </div>
-      </td>
-      <td style="text-align: center;">
-        <button class="btn-clean" style="padding: 4px 10px; font-size: 0.75rem;" onclick="openDetailModal('${group.date}')">
-          ดูรายละเอียด (${group.items.length})
-        </button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  if (tfoot) {
-    tfoot.innerHTML = `
-      <tr>
-        <td>รวมทั้งสิ้น (${dailyGrouped.length} วัน)</td>
-        <td>${grandQty.toLocaleString()} ชิ้น</td>
-        <td style="color: var(--emerald-main);">${grandPrice.toLocaleString()} บาท</td>
-        <td colspan="2" style="text-align:right; font-weight:normal; color:var(--text-muted); font-size:0.78rem;">สรุปยอดช่วงเวลาที่เลือก</td>
-      </tr>
-    `;
-  }
-
-  lucide.createIcons();
-}
-
+// ==========================================================================
+// 7. MODALS & FORMS
+// ==========================================================================
 function openDetailModal(dateStr) {
-  currentDetailDate = dateStr;
-  const group = globalDailyGrouped.find(g => g.date === dateStr);
+  STATE.currentDetailDate = dateStr;
+  const group = STATE.dailyGrouped.find(g => g.date === dateStr);
   if (!group) return;
 
   document.getElementById('detailModalDate').innerText = dateStr;
@@ -439,47 +459,51 @@ function openDetailModal(dateStr) {
   document.getElementById('countGeneral').innerText = generalItems.length;
   document.getElementById('countNun').innerText = nunItems.length;
 
-  if (generalItems.length === 0) genBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:16px;">ไม่มีรายการสินค้าทั่วไป</td></tr>';
+  if (generalItems.length === 0) genBody.innerHTML = '<tr><td colspan="6" class="table-loading-cell">ไม่มีรายการสินค้าทั่วไป</td></tr>';
   else generalItems.forEach(row => genBody.appendChild(createDetailRow(row)));
 
-  if (nunItems.length === 0) nunBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:16px;">ไม่มีรายการสินค้าแม่ชี</td></tr>';
+  if (nunItems.length === 0) nunBody.innerHTML = '<tr><td colspan="6" class="table-loading-cell">ไม่มีรายการสินค้าแม่ชี</td></tr>';
   else nunItems.forEach(row => nunBody.appendChild(createDetailRow(row)));
 
-  updateUserUI(); // Re-apply role permissions
+  bindDetailActionEvents();
   lucide.createIcons();
   document.getElementById('detailModal').style.display = 'flex';
 }
 
 function createDetailRow(row) {
   const tr = document.createElement('tr');
-
-  // Show action buttons ONLY if user is Admin
-  const actionBtnsHTML = (userRole === 'admin') ? `
-    <td style="text-align: center;" class="admin-col">
-      <button class="btn-clean" style="padding: 2px 8px; font-size: 0.72rem;" onclick="openEditModal('${row[0]}')"><i data-lucide="edit-3"></i></button>
-      <button class="btn-clean" style="padding: 2px 8px; font-size: 0.72rem; color: #ef4444;" onclick="deleteItem('${row[0]}')"><i data-lucide="trash-2"></i></button>
-    </td>
-  ` : `<td style="display:none;" class="admin-col"></td>`;
-
   tr.innerHTML = `
-    <td><small style="color: var(--text-muted);">${row[0]}</small></td>
+    <td><small class="text-muted-sm">${row[0]}</small></td>
     <td>${Number(row[3]).toLocaleString()}</td>
     <td style="font-weight:600;">${Number(row[5]).toLocaleString()} บาท</td>
     <td>${row[7]}</td>
-    <td><span style="color: var(--text-muted);">${row[6]}</span></td>
-    ${actionBtnsHTML}
+    <td><span class="text-muted-sm">${row[6]}</span></td>
+    <td class="text-center admin-only">
+      <button class="btn-clean btn-xs btn-edit-item" data-id="${row[0]}"><i data-lucide="edit-3"></i></button>
+      <button class="btn-clean btn-xs btn-delete-item" data-id="${row[0]}" style="color: #ef4444;"><i data-lucide="trash-2"></i></button>
+    </td>
   `;
   return tr;
 }
 
+function bindDetailActionEvents() {
+  document.querySelectorAll('.btn-edit-item').forEach(btn => {
+    btn.addEventListener('click', () => openEditModal(btn.getAttribute('data-id')));
+  });
+  document.querySelectorAll('.btn-delete-item').forEach(btn => {
+    btn.addEventListener('click', () => deleteItem(btn.getAttribute('data-id')));
+  });
+}
+
 function closeDetailModal() {
   document.getElementById('detailModal').style.display = 'none';
-  currentDetailDate = null;
+  STATE.currentDetailDate = null;
 }
 
 function addItemRow() {
   const container = document.getElementById('itemsContainer');
   if (!container) return;
+
   const rowDiv = document.createElement('div');
   rowDiv.className = 'form-item-grid';
   rowDiv.innerHTML = `
@@ -502,28 +526,23 @@ function addItemRow() {
       <label class="form-group-label" style="margin-bottom:4px;">หมายเหตุ</label>
       <input type="text" class="item-note input-clean-field" placeholder="ข้อมูลเพิ่มเติม">
     </div>
-    <div style="text-align:center;">
-      <button type="button" class="btn-delete-icon" onclick="removeItemRow(this)" title="ลบรายการ"><i data-lucide="trash-2"></i></button>
+    <div class="text-center">
+      <button type="button" class="btn-delete-icon btn-remove-row" title="ลบรายการ"><i data-lucide="trash-2"></i></button>
     </div>
   `;
+
+  rowDiv.querySelector('.btn-remove-row').addEventListener('click', function() {
+    if (document.querySelectorAll('.form-item-grid').length > 1) {
+      rowDiv.remove();
+      calculateFormLiveSummary();
+    } else {
+      showToast('warning', 'ต้องมีอย่างน้อย 1 รายการ');
+    }
+  });
+
   container.appendChild(rowDiv);
   lucide.createIcons();
   calculateFormLiveSummary();
-}
-
-function removeItemRow(btn) {
-  const rows = document.querySelectorAll('.form-item-grid');
-  if (rows.length > 1) {
-    btn.closest('.form-item-grid').remove();
-    calculateFormLiveSummary();
-  } else {
-    showToast('warning', 'ต้องมีอย่างน้อย 1 รายการ');
-  }
-}
-
-function initLiveFormCalculation() {
-  const container = document.getElementById('itemsContainer');
-  if (container) container.addEventListener('input', calculateFormLiveSummary);
 }
 
 function calculateFormLiveSummary() {
@@ -533,14 +552,11 @@ function calculateFormLiveSummary() {
     totalPrice += Number(row.querySelector('.item-price').value) || 0;
   });
 
-  const liveQtyElem = document.getElementById('liveTotalQty');
-  const livePriceElem = document.getElementById('liveTotalPrice');
-  if (liveQtyElem) liveQtyElem.innerText = totalQty.toLocaleString();
-  if (livePriceElem) livePriceElem.innerText = totalPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  document.getElementById('liveTotalQty').innerText = totalQty.toLocaleString();
+  document.getElementById('liveTotalPrice').innerText = totalPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
-// Form Submit (Both Staff and Admin can record)
-document.getElementById('pickupForm').addEventListener('submit', function(e) {
+function handlePickupSubmit(e) {
   e.preventDefault();
 
   Swal.fire({
@@ -586,7 +602,7 @@ document.getElementById('pickupForm').addEventListener('submit', function(e) {
 
         showToast('success', 'บันทึกข้อมูลเรียบร้อยแล้ว');
         document.getElementById('pickupForm').reset();
-        document.getElementById('recorder').value = currentUser ? currentUser.email.split('@')[0] : '';
+        document.getElementById('recorder').value = STATE.currentUser ? STATE.currentUser.email.split('@')[0] : '';
         initFlatpickr();
         document.getElementById('itemsContainer').innerHTML = '';
         addItemRow();
@@ -598,14 +614,14 @@ document.getElementById('pickupForm').addEventListener('submit', function(e) {
       }
     }
   });
-});
+}
 
 function openEditModal(id) {
-  if (userRole !== 'admin') {
+  if (STATE.userRole !== 'admin') {
     showToast('error', 'สิทธิ์ไม่เพียงพอ! เฉพาะ Admin เท่านั้น');
     return;
   }
-  const targetItem = allRawItems.find(r => r[0] === id);
+  const targetItem = STATE.rawItems.find(r => r[0] === id);
   if (!targetItem) return;
 
   document.getElementById('editId').value = targetItem[0];
@@ -625,10 +641,9 @@ function closeEditModal() {
   document.getElementById('editModal').style.display = 'none';
 }
 
-// Edit Submit (Admin only)
-document.getElementById('editForm').addEventListener('submit', function(e) {
+function handleEditSubmit(e) {
   e.preventDefault();
-  if (userRole !== 'admin') {
+  if (STATE.userRole !== 'admin') {
     showToast('error', 'สิทธิ์ไม่เพียงพอ! เฉพาะ Admin เท่านั้น');
     return;
   }
@@ -663,11 +678,10 @@ document.getElementById('editForm').addEventListener('submit', function(e) {
       }
     }
   });
-});
+}
 
-// Delete Item (Admin only)
 function deleteItem(id) {
-  if (userRole !== 'admin') {
+  if (STATE.userRole !== 'admin') {
     showToast('error', 'สิทธิ์ไม่เพียงพอ! เฉพาะ Admin เท่านั้น');
     return;
   }
@@ -693,12 +707,45 @@ function deleteItem(id) {
   });
 }
 
+// ==========================================================================
+// 8. UTILITIES & HELPERS
+// ==========================================================================
+function initTheme() {
+  const savedTheme = localStorage.getItem('theme');
+  const isDark = savedTheme === 'dark';
+  if (isDark) document.body.classList.add('dark-theme');
+  updateThemeIcon(isDark);
+}
+
+function toggleTheme() {
+  document.body.classList.toggle('dark-theme');
+  const isDark = document.body.classList.contains('dark-theme');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  updateThemeIcon(isDark);
+  if (STATE.dailyGrouped) renderWaveGradientChart(STATE.dailyGrouped);
+}
+
+function updateThemeIcon(isDark) {
+  const iconElem = document.getElementById('themeIcon');
+  if (iconElem) {
+    iconElem.setAttribute('data-lucide', isDark ? 'sun' : 'moon');
+    lucide.createIcons();
+  }
+}
+
+function initFlatpickr() {
+  const today = new Date().toISOString().split('T')[0];
+  flatpickr("#recordDate", { locale: "th", dateFormat: "Y-m-d", defaultDate: today, disableMobile: true });
+  flatpickr("#filterStartDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
+  flatpickr("#filterEndDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
+  flatpickr("#editDate", { locale: "th", dateFormat: "Y-m-d", disableMobile: true });
+}
+
 function setQuickDate(preset) {
   const today = new Date();
   let startDate = new Date(), endDate = new Date();
 
-  if (preset === 'today') { startDate = today; endDate = today; }
-  else if (preset === '7days') { startDate = new Date(); startDate.setDate(today.getDate() - 6); endDate = today; }
+  if (preset === '7days') { startDate = new Date(); startDate.setDate(today.getDate() - 6); endDate = today; }
   else if (preset === 'thisMonth') { startDate = new Date(today.getFullYear(), today.getMonth(), 1); endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0); }
 
   const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -708,7 +755,6 @@ function setQuickDate(preset) {
   applyCurrentFilters();
 }
 
-function applyFilter() { applyCurrentFilters(); }
 function resetFilter() {
   document.getElementById('filterStartDate').value = '';
   document.getElementById('filterEndDate').value = '';
@@ -729,13 +775,13 @@ function liveSearchDetailModal() {
 }
 
 function exportToCSV() {
-  if (!globalDailyGrouped || globalDailyGrouped.length === 0) {
+  if (!STATE.dailyGrouped || STATE.dailyGrouped.length === 0) {
     showToast('warning', 'ไม่มีข้อมูลสำหรับส่งออก CSV');
     return;
   }
 
   let csvContent = "\uFEFFวันที่,ยอดรวมสินค้า (ชิ้น),มูลค่ารวม (บาท),จำนวนทั่วไป,จำนวนแม่ชี\n";
-  globalDailyGrouped.forEach(group => {
+  STATE.dailyGrouped.forEach(group => {
     const genQty = (group.breakdown && group.breakdown['ทั่วไป']) ? group.breakdown['ทั่วไป'].qty : 0;
     const nunQty = (group.breakdown && group.breakdown['แม่ชี']) ? group.breakdown['แม่ชี'].qty : 0;
     csvContent += `"${group.date}",${group.totalQty},${group.totalPrice},${genQty},${nunQty}\n`;
@@ -750,12 +796,4 @@ function exportToCSV() {
   link.click();
   document.body.removeChild(link);
   showToast('success', 'ส่งออกข้อมูล CSV เรียบร้อย');
-}
-
-function exportToPDF() {
-  if (!globalDailyGrouped || globalDailyGrouped.length === 0) {
-    showToast('warning', 'ไม่มีข้อมูลสำหรับส่งออก PDF');
-    return;
-  }
-  window.print();
 }
