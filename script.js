@@ -27,17 +27,43 @@ const STATE = {
   chartInstance: null
 };
 
-const Toast = Swal.mixin({
-  toast: true,
-  position: 'top-end',
-  showConfirmButton: false,
-  timer: 2000,
-  timerProgressBar: true
-});
+// Modern Toast Notification System (Toastify)
+function showToast(type, text) {
+  const isDark = document.body.classList.contains('dark-theme');
+  let bg = isDark ? "#1e293b" : "#ffffff";
+  let textColor = isDark ? "#f8fafc" : "#0f172a";
+  let borderColor = type === 'success' ? '#0d9488' : type === 'error' ? '#ef4444' : '#6366f1';
 
-function showToast(icon, title) {
-  Toast.fire({ icon, title });
+  Toastify({
+    text: text,
+    duration: 2500,
+    gravity: "top",
+    position: "right",
+    stopOnFocus: true,
+    style: {
+      background: bg,
+      color: textColor,
+      borderRadius: "12px",
+      borderLeft: `4px solid ${borderColor}`,
+      borderTop: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+      borderRight: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+      borderBottom: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`
+    }
+  }).showToast();
 }
+
+// Sleek Custom SweetAlert2 Mixin
+const ModernSwal = Swal.mixin({
+  customClass: {
+    popup: 'clean-swal-popup',
+    title: 'clean-swal-title',
+    htmlContainer: 'clean-swal-text',
+    actions: 'swal-btn-gap',
+    confirmButton: 'btn-primary btn-clean',
+    cancelButton: 'btn-clean'
+  },
+  buttonsStyling: false
+});
 
 // ==========================================================================
 // 2. AUTHENTICATION & ROLE MANAGEMENT
@@ -95,7 +121,7 @@ function updateUserUI() {
   badge.innerText = STATE.userRole.toUpperCase();
   badge.className = `role-badge ${STATE.userRole}`;
 
-  // Toggle CSS attribute for role-based access control
+  // Apply Role Attribute for CSS visibility control
   document.body.setAttribute('data-role', STATE.userRole);
 }
 
@@ -354,7 +380,6 @@ function renderDailyTable(dailyGrouped) {
     tbody.appendChild(tr);
   });
 
-  // Bind View Detail Buttons
   document.querySelectorAll('.btn-view-detail').forEach(btn => {
     btn.addEventListener('click', () => openDetailModal(btn.getAttribute('data-date')));
   });
@@ -559,13 +584,10 @@ function calculateFormLiveSummary() {
 function handlePickupSubmit(e) {
   e.preventDefault();
 
-  Swal.fire({
+  ModernSwal.fire({
     title: 'ยืนยันการบันทึกข้อมูล?',
     text: "โปรดตรวจสอบข้อมูลให้ถูกต้องก่อนบันทึกเข้าสู่ระบบ",
-    icon: 'question',
     showCancelButton: true,
-    confirmButtonColor: '#0f172a',
-    cancelButtonColor: '#64748b',
     confirmButtonText: 'ยืนยันบันทึก',
     cancelButtonText: 'ยกเลิก'
   }).then(async (result) => {
@@ -650,13 +672,10 @@ function handleEditSubmit(e) {
 
   const editId = document.getElementById('editId').value;
 
-  Swal.fire({
+  ModernSwal.fire({
     title: 'ยืนยันการแก้ไขข้อมูล?',
     text: `ต้องการอัปเดตข้อมูลรายการรหัส ${editId} ใช่หรือไม่`,
-    icon: 'question',
     showCancelButton: true,
-    confirmButtonColor: '#0f172a',
-    cancelButtonColor: '#64748b',
     confirmButtonText: 'ยืนยันการแก้ไข',
     cancelButtonText: 'ยกเลิก'
   }).then(async (result) => {
@@ -686,14 +705,11 @@ function deleteItem(id) {
     return;
   }
 
-  Swal.fire({
+  ModernSwal.fire({
     title: 'ยืนยันการลบรายการ?',
     text: `คุณกำลังจะลบรายการรหัส ${id} ข้อมูลนี้ไม่สามารถกู้คืนได้!`,
-    icon: 'warning',
     showCancelButton: true,
-    confirmButtonColor: '#ef4444',
-    cancelButtonColor: '#64748b',
-    confirmButtonText: 'ใช่, ลบเลย!',
+    confirmButtonText: 'ใช่, ลบเลย',
     cancelButtonText: 'ยกเลิก'
   }).then(async (result) => {
     if (result.isConfirmed) {
