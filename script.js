@@ -337,7 +337,7 @@ function renderDailyTable(dailyGrouped) {
   if (!dailyGrouped || dailyGrouped.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5">
+        <td colspan="6">
           <div class="empty-state-box">
             <div class="empty-state-icon"><i data-lucide="inbox"></i></div>
             <div class="text-main" style="font-weight:600;">ไม่พบข้อมูลรายการ</div>
@@ -352,24 +352,36 @@ function renderDailyTable(dailyGrouped) {
   }
 
   let grandQty = 0, grandPrice = 0;
+  let totGenQty = 0, totGenPrice = 0;
+  let totNunQty = 0, totNunPrice = 0;
 
   dailyGrouped.forEach(group => {
     const genQty = (group.breakdown && group.breakdown['ทั่วไป']) ? group.breakdown['ทั่วไป'].qty : 0;
+    const genPrice = (group.breakdown && group.breakdown['ทั่วไป']) ? group.breakdown['ทั่วไป'].price : 0;
     const nunQty = (group.breakdown && group.breakdown['แม่ชี']) ? group.breakdown['แม่ชี'].qty : 0;
+    const nunPrice = (group.breakdown && group.breakdown['แม่ชี']) ? group.breakdown['แม่ชี'].price : 0;
 
     grandQty += group.totalQty;
     grandPrice += group.totalPrice;
+    totGenQty += genQty;
+    totGenPrice += genPrice;
+    totNunQty += nunQty;
+    totNunPrice += nunPrice;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>${group.date}</strong></td>
-      <td>${group.totalQty.toLocaleString()} ชิ้น</td>
-      <td class="text-emerald" style="font-weight: 600;">${group.totalPrice.toLocaleString()} บาท</td>
+      <td><strong>${group.totalQty.toLocaleString()}</strong> ชิ้น</td>
+      <td class="text-emerald" style="font-weight: 700;">${group.totalPrice.toLocaleString()} บาท</td>
       <td>
-        <div style="display:flex; gap:6px;">
-          <span class="badge-pastel emerald">ทั่วไป: ${genQty}</span>
-          <span class="badge-pastel purple">แม่ชี: ${nunQty}</span>
-        </div>
+        <span class="badge-pastel emerald">
+          ${genQty.toLocaleString()} ชิ้น (${genPrice.toLocaleString()} บ.)
+        </span>
+      </td>
+      <td>
+        <span class="badge-pastel purple">
+          ${nunQty.toLocaleString()} ชิ้น (${nunPrice.toLocaleString()} บ.)
+        </span>
       </td>
       <td class="text-center">
         <button class="btn-clean btn-xs btn-view-detail" data-date="${group.date}">
@@ -387,10 +399,12 @@ function renderDailyTable(dailyGrouped) {
   if (tfoot) {
     tfoot.innerHTML = `
       <tr>
-        <td>รวมทั้งสิ้น (${dailyGrouped.length} วัน)</td>
-        <td>${grandQty.toLocaleString()} ชิ้น</td>
-        <td class="text-emerald">${grandPrice.toLocaleString()} บาท</td>
-        <td colspan="2" class="text-right text-muted-sm">สรุปยอดช่วงเวลาที่เลือก</td>
+        <td><strong>รวมทั้งสิ้น (${dailyGrouped.length} วัน)</strong></td>
+        <td><strong>${grandQty.toLocaleString()}</strong> ชิ้น</td>
+        <td class="text-emerald"><strong>${grandPrice.toLocaleString()}</strong> บาท</td>
+        <td><small class="text-emerald" style="font-weight:600;">${totGenQty.toLocaleString()} ชิ้น (${totGenPrice.toLocaleString()} บ.)</small></td>
+        <td><small class="text-purple" style="font-weight:600;">${totNunQty.toLocaleString()} ชิ้น (${totNunPrice.toLocaleString()} บ.)</small></td>
+        <td class="text-right text-muted-sm">สรุปช่วงเวลาที่เลือก</td>
       </tr>
     `;
   }
@@ -476,7 +490,12 @@ function openDetailModal(dateStr) {
   
   const genBody = document.getElementById('detailGeneralBody');
   const nunBody = document.getElementById('detailNunBody');
+  const genFoot = document.getElementById('detailGeneralFoot');
+  const nunFoot = document.getElementById('detailNunFoot');
+
   genBody.innerHTML = ''; nunBody.innerHTML = '';
+  if (genFoot) genFoot.innerHTML = '';
+  if (nunFoot) nunFoot.innerHTML = '';
 
   const generalItems = group.items.filter(r => r[2] === 'ทั่วไป');
   const nunItems = group.items.filter(r => r[2] === 'แม่ชี');
@@ -484,11 +503,63 @@ function openDetailModal(dateStr) {
   document.getElementById('countGeneral').innerText = generalItems.length;
   document.getElementById('countNun').innerText = nunItems.length;
 
-  if (generalItems.length === 0) genBody.innerHTML = '<tr><td colspan="6" class="table-loading-cell">ไม่มีรายการสินค้าทั่วไป</td></tr>';
-  else generalItems.forEach(row => genBody.appendChild(createDetailRow(row)));
+  let genTotQty = 0, genTotPrice = 0;
+  generalItems.forEach(r => { genTotQty += r[3]; genTotPrice += r[5]; });
 
-  if (nunItems.length === 0) nunBody.innerHTML = '<tr><td colspan="6" class="table-loading-cell">ไม่มีรายการสินค้าแม่ชี</td></tr>';
-  else nunItems.forEach(row => nunBody.appendChild(createDetailRow(row)));
+  let nunTotQty = 0, nunTotPrice = 0;
+  nunItems.forEach(r => { nunTotQty += r[3]; nunTotPrice += r[5]; });
+
+  // Render General Table Body & Footer Subtotal
+  if (generalItems.length === 0) {
+    genBody.innerHTML = '<tr><td colspan="6" class="table-loading-cell">ไม่มีรายการสินค้าทั่วไป</td></tr>';
+  } else {
+    generalItems.forEach(row => genBody.appendChild(createDetailRow(row)));
+    if (genFoot) {
+      genFoot.innerHTML = `
+        <tr>
+          <td><strong>รวมสินค้าทั่วไป (${generalItems.length} รายการ)</strong></td>
+          <td><strong>${genTotQty.toLocaleString()}</strong> ชิ้น</td>
+          <td class="text-emerald"><strong>${genTotPrice.toLocaleString()}</strong> บาท</td>
+          <td colspan="3" class="text-muted-sm">สรุปย่อยทั่วไป</td>
+        </tr>
+      `;
+    }
+  }
+
+  // Render Nun Table Body & Footer Subtotal
+  if (nunItems.length === 0) {
+    nunBody.innerHTML = '<tr><td colspan="6" class="table-loading-cell">ไม่มีรายการสินค้าแม่ชี</td></tr>';
+  } else {
+    nunItems.forEach(row => nunBody.appendChild(createDetailRow(row)));
+    if (nunFoot) {
+      nunFoot.innerHTML = `
+        <tr>
+          <td><strong>รวมสินค้าแม่ชี (${nunItems.length} รายการ)</strong></td>
+          <td><strong>${nunTotQty.toLocaleString()}</strong> ชิ้น</td>
+          <td class="text-purple"><strong>${nunTotPrice.toLocaleString()}</strong> บาท</td>
+          <td colspan="3" class="text-muted-sm">สรุปย่อยแม่ชี</td>
+        </tr>
+      `;
+    }
+  }
+
+  // Render Grand Summary Bar inside Detail Modal
+  const grandSummaryElem = document.getElementById('detailGrandSummary');
+  if (grandSummaryElem) {
+    const totalCount = group.items.length;
+    grandSummaryElem.innerHTML = `
+      <div class="form-live-summary" style="margin-top: 18px; flex-wrap: wrap; gap: 12px;">
+        <span style="display:flex; align-items:center; gap:6px;">
+          <i data-lucide="calculator"></i> <strong>สรุปยอดรวมประจำวัน (${dateStr}):</strong>
+        </span>
+        <span>
+          รวมทั้งสิ้น <strong>${totalCount}</strong> รายการ | 
+          จำนวน <strong class="text-main">${group.totalQty.toLocaleString()}</strong> ชิ้น | 
+          มูลค่าสุทธิ <strong class="text-emerald" style="font-size:1.05rem;">${group.totalPrice.toLocaleString()}</strong> บาท
+        </span>
+      </div>
+    `;
+  }
 
   bindDetailActionEvents();
   lucide.createIcons();
@@ -796,11 +867,13 @@ function exportToCSV() {
     return;
   }
 
-  let csvContent = "\uFEFFวันที่,ยอดรวมสินค้า (ชิ้น),มูลค่ารวม (บาท),จำนวนทั่วไป,จำนวนแม่ชี\n";
+  let csvContent = "\uFEFFวันที่,ยอดรวมสินค้า (ชิ้น),มูลค่ารวม (บาท),จำนวนทั่วไป,มูลค่าทั่วไป,จำนวนแม่ชี,มูลค่าแม่ชี\n";
   STATE.dailyGrouped.forEach(group => {
     const genQty = (group.breakdown && group.breakdown['ทั่วไป']) ? group.breakdown['ทั่วไป'].qty : 0;
+    const genPrice = (group.breakdown && group.breakdown['ทั่วไป']) ? group.breakdown['ทั่วไป'].price : 0;
     const nunQty = (group.breakdown && group.breakdown['แม่ชี']) ? group.breakdown['แม่ชี'].qty : 0;
-    csvContent += `"${group.date}",${group.totalQty},${group.totalPrice},${genQty},${nunQty}\n`;
+    const nunPrice = (group.breakdown && group.breakdown['แม่ชี']) ? group.breakdown['แม่ชี'].price : 0;
+    csvContent += `"${group.date}",${group.totalQty},${group.totalPrice},${genQty},${genPrice},${nunQty},${nunPrice}\n`;
   });
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

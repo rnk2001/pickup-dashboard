@@ -17,7 +17,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- Modern Notification Libraries (Toastify & SweetAlert2) -->
+  <!-- Modern Notification Libraries -->
   <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
   <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -263,15 +263,16 @@
             <thead>
               <tr>
                 <th>วันที่</th>
-                <th>จำนวนรวม (ชิ้น)</th>
-                <th>มูลค่ารวม (บาท)</th>
-                <th>สัดส่วนประเภท</th>
+                <th>จำนวนรวม</th>
+                <th>มูลค่ารวม</th>
+                <th>สินค้าทั่วไป</th>
+                <th>สินค้าแม่ชี</th>
                 <th class="text-center">การจัดการ</th>
               </tr>
             </thead>
             <tbody id="dailyTableBody">
               <tr>
-                <td colspan="5" class="table-loading-cell">กำลังโหลดข้อมูล...</td>
+                <td colspan="6" class="table-loading-cell">กำลังโหลดข้อมูล...</td>
               </tr>
             </tbody>
             <tfoot id="dailyTableFoot"></tfoot>
@@ -342,6 +343,7 @@
         <input type="text" id="detailTableSearch" class="btn-clean w-full text-left" placeholder="ค้นหารายการ...">
       </div>
 
+      <!-- Section: สินค้าทั่วไป -->
       <div class="modal-section-title text-emerald">
         <span class="badge-pastel emerald"><i data-lucide="box"></i> สินค้าทั่วไป</span> (<span id="countGeneral">0</span> รายการ)
       </div>
@@ -358,13 +360,15 @@
             </tr>
           </thead>
           <tbody id="detailGeneralBody"></tbody>
+          <tfoot id="detailGeneralFoot"></tfoot>
         </table>
       </div>
 
+      <!-- Section: สินค้าแม่ชี -->
       <div class="modal-section-title text-purple">
         <span class="badge-pastel purple"><i data-lucide="users"></i> สินค้าแม่ชี</span> (<span id="countNun">0</span> รายการ)
       </div>
-      <div class="overflow-x-auto">
+      <div class="overflow-x-auto mb-md">
         <table class="clean-table">
           <thead>
             <tr>
@@ -377,8 +381,12 @@
             </tr>
           </thead>
           <tbody id="detailNunBody"></tbody>
+          <tfoot id="detailNunFoot"></tfoot>
         </table>
       </div>
+
+      <!-- Grand Total Summary Box inside Detail Modal -->
+      <div id="detailGrandSummary"></div>
     </div>
   </div>
 
