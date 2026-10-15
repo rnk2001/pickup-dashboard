@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   lucide.createIcons();
   initFlatpickr();
+  initDefaultMonth();
   addItemRow();
   bindGlobalEvents();
 
@@ -111,6 +112,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+function initDefaultMonth() {
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const filterMonthInput = document.getElementById('filterMonth');
+  if (filterMonthInput) {
+    filterMonthInput.value = currentMonthStr;
+  }
+}
 
 function updateUserUI() {
   if (!STATE.currentUser) return;
@@ -167,9 +177,15 @@ function bindGlobalEvents() {
     });
   });
 
-  // Action Buttons
+  // Action Buttons & Filter Change
   document.getElementById('btnLogout').addEventListener('click', logoutUser);
   document.getElementById('btnApplyFilter').addEventListener('click', applyCurrentFilters);
+  document.getElementById('filterMonth').addEventListener('change', () => {
+    // ล้างตัวกรองเริ่ม-ถึงวันที่เมื่อมีการเลือกเดือน
+    document.getElementById('filterStartDate').value = '';
+    document.getElementById('filterEndDate').value = '';
+    applyCurrentFilters();
+  });
   document.getElementById('btnThemeToggle').addEventListener('click', toggleTheme);
   document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
   document.getElementById('btnExportPDF').addEventListener('click', () => window.print());
@@ -257,15 +273,32 @@ function initRealtimeListener() {
 // 5. DATA PROCESSING & FILTERS
 // ==========================================================================
 function applyCurrentFilters() {
+  const selectedMonth = document.getElementById('filterMonth').value;
   const startDate = document.getElementById('filterStartDate').value;
   const endDate = document.getElementById('filterEndDate').value;
   const itemType = document.getElementById('filterItemType').value;
 
   let filtered = [...STATE.rawItems];
 
-  if (startDate) filtered = filtered.filter(row => row[1] >= startDate);
-  if (endDate) filtered = filtered.filter(row => row[1] <= endDate);
-  if (itemType && itemType !== 'ทั้งหมด') filtered = filtered.filter(row => row[2] === itemType);
+  // ถ้ามีการระบุการกรองช่วงวันที่แบบเจาะจง ให้ใช้ช่วงวันนั้นก่อน
+  if (startDate || endDate) {
+    if (startDate) filtered = filtered.filter(row => row[1] >= startDate);
+    if (endDate) filtered = filtered.filter(row => row[1] <= endDate);
+    document.getElementById('currentMonthDisplay').innerText = `ช่วงวันที่ ${startDate || 'เริ่มต้น'} ถึง ${endDate || 'ปัจจุบัน'}`;
+  } else if (selectedMonth) {
+    // หากไม่มีการระบุช่วงวันที่ ให้กรองตามเดือนที่เลือก
+    filtered = filtered.filter(row => row[1].startsWith(selectedMonth));
+    const [year, month] = selectedMonth.split('-');
+    const dateObj = new Date(year, month - 1);
+    const monthNameTH = dateObj.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+    document.getElementById('currentMonthDisplay').innerText = monthNameTH;
+  } else {
+    document.getElementById('currentMonthDisplay').innerText = 'ทั้งหมด';
+  }
+
+  if (itemType && itemType !== 'ทั้งหมด') {
+    filtered = filtered.filter(row => row[2] === itemType);
+  }
 
   processAndRenderData(filtered);
 }
@@ -340,7 +373,7 @@ function renderDailyTable(dailyGrouped) {
         <td colspan="6">
           <div class="empty-state-box">
             <div class="empty-state-icon"><i data-lucide="inbox"></i></div>
-            <div class="text-main" style="font-weight:600;">ไม่พบข้อมูลรายการ</div>
+            <div class="text-main" style="font-weight:600;">ไม่พบข้อมูลรายการในเดือนนี้</div>
             <button class="btn-clean btn-xs mt-sm" id="btnResetFilter"><i data-lucide="rotate-ccw"></i> ล้างตัวกรอง</button>
           </div>
         </td>
@@ -832,8 +865,14 @@ function setQuickDate(preset) {
   const today = new Date();
   let startDate = new Date(), endDate = new Date();
 
-  if (preset === '7days') { startDate = new Date(); startDate.setDate(today.getDate() - 6); endDate = today; }
-  else if (preset === 'thisMonth') { startDate = new Date(today.getFullYear(), today.getMonth(), 1); endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0); }
+  if (preset === '7days') { 
+    startDate = new Date(); 
+    startDate.setDate(today.getDate() - 6); 
+    endDate = today; 
+  } else if (preset === 'thisMonth') { 
+    startDate = new Date(today.getFullYear(), today.getMonth(), 1); 
+    endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0); 
+  }
 
   const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -843,6 +882,7 @@ function setQuickDate(preset) {
 }
 
 function resetFilter() {
+  initDefaultMonth();
   document.getElementById('filterStartDate').value = '';
   document.getElementById('filterEndDate').value = '';
   document.getElementById('filterItemType').value = 'ทั้งหมด';

@@ -121,6 +121,12 @@
           <input type="text" id="topGlobalSearch" placeholder="ค้นหาตาราง...">
         </div>
         
+        <!-- Choose Specific Month -->
+        <div class="date-input-wrapper">
+          <i data-lucide="calendar-days"></i>
+          <input type="month" id="filterMonth" class="input-clean-field" style="width: 145px; padding-left: 32px;" title="เลือกเดือนที่ต้องการแสดง">
+        </div>
+
         <div class="date-input-wrapper">
           <i data-lucide="calendar"></i>
           <input type="text" id="filterStartDate" placeholder="เริ่มวันที่">
@@ -255,7 +261,7 @@
       <!-- Summary Table -->
       <div class="clean-card">
         <div class="card-heading-row">
-          <div class="card-heading"><i data-lucide="calendar-days"></i> ตารางสรุปรายวัน</div>
+          <div class="card-heading"><i data-lucide="calendar-days"></i> ตารางสรุปรายวัน ประจำเดือน: <span id="currentMonthDisplay" class="text-emerald" style="margin-left: 6px;"></span></div>
         </div>
 
         <div class="overflow-x-auto">
